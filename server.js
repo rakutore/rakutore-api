@@ -5,8 +5,9 @@ const app = express();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-   ssl: { require: true, rejectUnauthorized: false }, // ← これがあれば検証スキップ
+  ssl: { rejectUnauthorized: true }
 });
+
 
 app.get('/healthz', (req, res) => res.send('ok'));
 
