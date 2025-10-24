@@ -2,6 +2,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const fs = require('fs');
 
+const ca = fs.readFileSync(__dirname + '/supabase-ca.crt', 'utf8');const fs = require('fs');
 const ca = fs.readFileSync(__dirname + '/supabase-ca.crt', 'utf8');
 
 const app = express();
