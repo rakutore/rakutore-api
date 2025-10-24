@@ -1,10 +1,15 @@
-// server.js（健康チェックだけ返す最小版）
-const express = require("express");
+const express = require('express');
 const { Pool } = require('pg');
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
 const app = express();
-app.get("/healthz", (req, res) => res.send("ok")); // ← これが見えれば稼働OK
-app.listen(process.env.PORT || 8080, () => console.log("up"));
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+app.get('/healthz', (req, res) => res.send('ok'));
+
 app.get('/dbcheck', async (req, res) => {
   try {
     const { rows } = await pool.query('select now() as now');
@@ -14,3 +19,6 @@ app.get('/dbcheck', async (req, res) => {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
+
+const port = process.env.PORT || 8080;
+app.listen(port, () => console.log('up'));
