@@ -14,8 +14,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// …（既存の Pool 生成、/healthz /dbcheck /todos など続き）
+const rateLimit = require('express-rate-limit');
 
+// 1分間に同一IPから60回まで
+const limiter = rateLimit({ windowMs: 60 * 1000, limit: 60 });
+app.use(limiter);
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL, // Railwayの環境変数から読む
