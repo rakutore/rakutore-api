@@ -2,6 +2,8 @@ const express = require('express');
 const { Pool } = require('pg');
 
 const app = express();
+app.use(express.json());   // ← 追加：JSONボディをパース
+
 
 // ←これを最初に追加（全ルートより前）
  app.use(express.json());
