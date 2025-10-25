@@ -3,27 +3,24 @@ const { Pool } = require('pg');
 
 const app = express();
 
-// ★ JSON受信を有効化（POST/PATCHに必須）
+// ★ JSON ボディを読む（POST/PATCH で 400 を防ぐ）
 app.use(express.json());
 
-// ★ APIキー必須（/healthz は除外）
+// ★ API キーは前後空白を除去して保持
+const API_KEY = (process.env.API_KEY || '').trim();
+
+// ★ 認可ミドルウェア（GET /todos だけは公開、それ以外はキー必須）
 app.use((req, res, next) => {
-  if (req.path === '/healthz') return next();
-  const ok = req.get('x-api-key') === process.env.API_KEY;
-  if (!ok) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  if (req.method === 'GET' && req.path === '/todos') return next();
+
+  const headerKey = (req.get('x-api-key') || '').trim();
+  if (headerKey !== API_KEY) {
+    return res.status(401).json({ ok: false, error: 'unauthorized' });
+  }
   next();
 });
 
-const rateLimit = require('express-rate-limit');
-
-// 1分間に同一IPから60回まで
-const limiter = rateLimit({ windowMs: 60 * 1000, limit: 60 });
-app.use(limiter);
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // Railwayの環境変数から読む
-  ssl: { rejectUnauthorized: false },         // CAなしでOKにする（まずはこれで通す）
-});
+// ---- ここから既存の DB 接続や /healthz /dbcheck /todos ルートなど ----
 
 app.get('/healthz', (_, res) => res.send('ok'));
 
