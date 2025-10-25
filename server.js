@@ -20,5 +20,73 @@ app.get('/dbcheck', async (_, res) => {
   }
 });
 
+/* ===== ここから TODO API ===== */
+
+// 一覧
+app.get('/todos', async (_, res) => {
+  try {
+    const { rows } = await pool.query(
+      'select id, title, done, created_at from todos order by id desc'
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 追加
+app.post('/todos', async (req, res) => {
+  try {
+    const { title } = req.body || {};
+    if (!title) return res.status(400).json({ ok: false, error: 'title required' });
+
+    const { rows } = await pool.query(
+      'insert into todos (title) values ($1) returning id, title, done, created_at',
+      [title]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 更新（title / done のどちらか、または両方）
+app.patch('/todos/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ ok: false, error: 'invalid id' });
+
+    const { title = null, done = null } = req.body || {};
+    const { rows } = await pool.query(
+      `update todos
+         set title = coalesce($1, title),
+             done  = coalesce($2, done)
+       where id = $3
+       returning id, title, done, created_at`,
+      [title, done, id]
+    );
+    if (!rows.length) return res.status(404).json({ ok: false, error: 'not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 削除
+app.delete('/todos/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ ok: false, error: 'invalid id' });
+
+    const { rowCount } = await pool.query('delete from todos where id = $1', [id]);
+    if (!rowCount) return res.status(404).json({ ok: false, error: 'not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+/* ===== TODO API ここまで ===== */
+
+
 const port = process.env.PORT || 8080;
 app.listen(port, () => console.log('up'));
