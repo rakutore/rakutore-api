@@ -2,11 +2,19 @@ const express = require('express');
 const { Pool } = require('pg');
 
 const app = express();
-app.use(express.json());   // ← 追加：JSONボディをパース
 
+// ★ JSON受信を有効化（POST/PATCHに必須）
+app.use(express.json());
 
-// ←これを最初に追加（全ルートより前）
- app.use(express.json());
+// ★ APIキー必須（/healthz は除外）
+app.use((req, res, next) => {
+  if (req.path === '/healthz') return next();
+  const ok = req.get('x-api-key') === process.env.API_KEY;
+  if (!ok) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  next();
+});
+
+// …（既存の Pool 生成、/healthz /dbcheck /todos など続き）
 
 
 const pool = new Pool({
