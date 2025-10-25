@@ -3,6 +3,10 @@ const { Pool } = require('pg');
 
 const app = express();
 
+// ←これを最初に追加（全ルートより前）
+ app.use(express.json());
+
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL, // Railwayの環境変数から読む
   ssl: { rejectUnauthorized: false },         // CAなしでOKにする（まずはこれで通す）
