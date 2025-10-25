@@ -1,13 +1,12 @@
-// server.js
 const express = require('express');
 const { Pool } = require('pg');
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: true,                       // ← 検証あり（= rejectUnauthorized: true と同等）
-});
-
 const app = express();
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL, // Railwayの環境変数から読む
+  ssl: { rejectUnauthorized: false },         // CAなしでOKにする（まずはこれで通す）
+});
 
 app.get('/healthz', (_, res) => res.send('ok'));
 
@@ -16,6 +15,7 @@ app.get('/dbcheck', async (_, res) => {
     const { rows } = await pool.query('select now() as now');
     res.json({ ok: true, now: rows[0].now });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
