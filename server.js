@@ -113,5 +113,14 @@ app.get('/debug/auth', (req, res) => {
     match: sent === expected
   });
 });
+app.get('/debug/auth', (req, res) => {
+  const sent = req.get('x-api-key') || null;
+  const expected = process.env.API_KEY || '';
+  res.json({
+    sent,                       // クライアントから届いた値
+    expected_len: expected.length,
+    match: sent === expected
+  });
+});
 
 app.listen(port, () => console.log('up'));
