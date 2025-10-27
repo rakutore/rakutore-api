@@ -1,0 +1,30 @@
+name: daily-todos
+
+on:
+  schedule:
+    # 毎日 00:00 UTC = 日本時間 09:00 に実行
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}  # 手動実行ボタンも出す
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1) 健康チェック（/dbcheck）
+        run: |
+          set -e
+          curl -sS "${{ secrets.API_URL }}/dbcheck" | tee /tmp/db.json
+
+      - name: 2) 本日のタスクを追加
+        run: |
+          set -e
+          TITLE="定期タスク $(date +'%Y-%m-%d')"
+          curl -sS -X POST "${{ secrets.API_URL }}/todos" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: ${{ secrets.API_KEY }}" \
+            -d "{\"title\":\"${TITLE}\"}" | tee /tmp/created.json
+
+      - name: 3) 追加結果を表示
+        run: |
+          echo "---- created ----"
+          cat /tmp/created.json
