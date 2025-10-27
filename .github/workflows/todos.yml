@@ -16,14 +16,27 @@ jobs:
           set -e
           curl -sS "${{ secrets.API_URL }}/dbcheck" | tee /tmp/db.json
 
-      - name: 2) 本日のタスクを追加
-        run: |
-          set -e
-          TITLE="定期タスク $(date +'%Y-%m-%d')"
-          curl -sS -X POST "${{ secrets.API_URL }}/todos" \
-            -H "Content-Type: application/json" \
-            -H "x-api-key: ${{ secrets.API_KEY }}" \
-            -d "{\"title\":\"${TITLE}\"}" | tee /tmp/created.json
+     - name: 2) 本日のタスクを追加（重複防止つき）
+  env:
+    TZ: Asia/Tokyo
+    API: ${{ secrets.API_URL }}
+    KEY: ${{ secrets.API_KEY }}
+  run: |
+    set -e
+    TODAY="$(date +'%Y-%m-%d')"
+
+    # 既存のTODOに今日の日付があればスキップ
+    BODY="$(curl -sS "$API/todos" -H "x-api-key: $KEY")"
+    if echo "$BODY" | grep -q "$TODAY"; then
+      echo "今日分($TODAY)は既に作成済みなのでスキップします。"
+      exit 0
+    fi
+
+    TITLE="定期タスク $TODAY"
+    curl --fail -sS -X POST "$API/todos" \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: $KEY" \
+      -d "{\"title\":\"$TITLE\"}"
 
       - name: 3) 追加結果を表示
         run: |
