@@ -38,7 +38,7 @@ app.get('/debug/auth', (req, res) => {
 
 // === TODO API =================================================
 // 一覧：公開（閲覧のみ鍵なし）
-app.get('/todos', async (_, res) => {
+app.get('/todos', requireKey, async (_, res) => {
   try {
     const { rows } = await pool.query(
       'select id, title, done, created_at from todos order by id desc'
