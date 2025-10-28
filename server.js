@@ -9,7 +9,7 @@ app.use(express.json());
 // ★ pool はトップレベル（関数の外）で定義！ ここが重要
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: { ca: process.env.PG_CA, rejectUnauthorized: true }, // ← 厳格化
 });
 
 // ---- 公開のヘルスチェック類（認証なし）----
