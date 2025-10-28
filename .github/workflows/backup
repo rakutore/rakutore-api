@@ -1,0 +1,21 @@
+on:
+  schedule:
+    - cron: '0 16 * * *'   # UTC16:00 = JST 01:00
+  workflow_dispatch: {}
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump database
+        env:
+          PGURL: ${{ secrets.PG_URL_RO }}
+        run: |
+          set -e
+          sudo apt-get update -y && sudo apt-get install -y postgresql-client
+          pg_dump --format=custom --file=backup.dump "$PGURL"
+      - name: Upload artifact (7days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg-backup
+          path: backup.dump
+          retention-days: 7
