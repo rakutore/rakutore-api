@@ -4,6 +4,27 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.json());
 
+const rateLimit = require('express-rate-limit');
+
+// Railway/Proxy配下でクライアントIPを正しく見るため
+app.set('trust proxy', 1);
+
+// 読み取り用（GET）…1分に 60 回/ IP
+const readLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 書き込み用（POST/PATCH/DELETE）…1分に 10 回/ IP
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // === APIキー認証（更新系だけに使う） ==========================
 const API_KEY = (process.env.API_KEY || '').trim();
 function requireKey(req, res, next) {
