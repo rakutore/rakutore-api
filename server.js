@@ -12,7 +12,7 @@ app.set('trust proxy', 1);
 // 読み取り用（GET）…1分に 60 回/ IP
 const readLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 60,
+  limit: 60,　　　
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -90,7 +90,7 @@ app.get('/todos', requireKey, async (_, res) => {
 });
 
 // 追加：鍵必須
-app.post('/todos', requireKey, async (req, res) => {
+app.post('/todos', writeLimiter, requireKey, async (req, res) => {
   try {
     const { title } = req.body || {};
     if (!title) return res.status(400).json({ ok: false, error: 'title required' });
@@ -106,7 +106,7 @@ app.post('/todos', requireKey, async (req, res) => {
 });
 
 // 更新：鍵必須
-app.patch('/todos/:id', requireKey, async (req, res) => {
+app.patch('/todos/:id', writeLimiter, requireKey, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ ok: false, error: 'invalid id' });
@@ -128,7 +128,7 @@ app.patch('/todos/:id', requireKey, async (req, res) => {
 });
 
 // 削除：鍵必須
-app.delete('/todos/:id', requireKey, async (req, res) => {
+app.delete('/todos/:id', writeLimiter, requireKey, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ ok: false, error: 'invalid id' });
