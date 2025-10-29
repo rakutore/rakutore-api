@@ -16,6 +16,25 @@ const readLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+// --- 公開エンドポイント（レート制限付き） ---
+app.get('/healthz', readLimiter, (_, res) => res.send('ok'));
+
+app.get('/dbcheck', readLimiter, async (_, res) => {
+  try {
+    const { rows } = await pool.query('select now() as now');
+    res.json({ ok: true, now: rows[0].now });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// （任意）デバッグ用の認証チェックも制限をかけたい場合
+// app.get('/debug/auth', readLimiter, (req, res) => {
+//   const sent = req.get('x-api-key') || '';
+//   const expected = process.env.API_KEY || '';
+//   res.json({ sent, expected_len: expected.length, match: sent === expected });
+// });
+
 
 // 書き込み用（POST/PATCH/DELETE）…1分に 10 回/ IP
 const writeLimiter = rateLimit({
