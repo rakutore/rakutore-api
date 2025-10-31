@@ -2,14 +2,13 @@ name: backup
 
 on:
   schedule:
-    - cron: '0 16 * * *'   # UTC16:00 = JST 01:00
-  workflow_dispatch: {}     # 手動実行ボタンも残す
+    - cron: '0 16 * * *'          # UTC 16:00 = JST 01:00
+  workflow_dispatch: {}
 
 jobs:
   dump:
     runs-on: ubuntu-latest
     env:
-      # ← GitHub Secrets に作った「PG_URL_RO」を渡す
       PGURL: ${{ secrets.PG_URL_RO }}
 
     steps:
@@ -18,13 +17,12 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
 
-      # ── ここが「一時デバッグ」ステップ（確認できたら削除OK） ──
+      # 一時デバッグ（接続できるか確認）
       - name: Check pg connectivity (temporary)
         run: |
           set -e
           psql --version
           pg_isready -d "$PGURL" -t 10 || true
-          # 実接続テスト（Secretsはマスクされるが echo はしない）
           psql "$PGURL" -Atc 'select now()' || true
 
       - name: Dump database
