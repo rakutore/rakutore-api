@@ -3,13 +3,14 @@ name: backup
 on:
   schedule:
     - cron: '0 16 * * *'   # UTC16:00 = JST 01:00
-  workflow_dispatch: {}     # 手動実行ボタン
+  workflow_dispatch: {}     # 手動実行ボタンも残す
 
 jobs:
   dump:
     runs-on: ubuntu-latest
     env:
-      PGURL: ${{ secrets.PG_URL_RO }}  # ← GitHub Secrets に作った Pooler のURI
+      # ← GitHub Secrets に作った「PG_URL_RO」を渡す
+      PGURL: ${{ secrets.PG_URL_RO }}
 
     steps:
       - name: Install PostgreSQL client
@@ -17,12 +18,14 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
 
-      # （必要に応じて一時デバッグ）
-      # - name: Check pg connectivity
-      #   run: |
-      #     set -e
-      #     pg_isready -d "$PGURL" -t 10 || true
-      #     psql "$PGURL" -Atc 'select now()' || true
+      # ── ここが「一時デバッグ」ステップ（確認できたら削除OK） ──
+      - name: Check pg connectivity (temporary)
+        run: |
+          set -e
+          psql --version
+          pg_isready -d "$PGURL" -t 10 || true
+          # 実接続テスト（Secretsはマスクされるが echo はしない）
+          psql "$PGURL" -Atc 'select now()' || true
 
       - name: Dump database
         run: |
