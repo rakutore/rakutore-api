@@ -8,7 +8,7 @@ jobs:
   dump:
     runs-on: ubuntu-latest
     env:
-      DB_URL: "${{ secrets.SUPABASE_DB_URL }}"  # ← URI 丸ごと
+      DB_URL: "${{ secrets.SUPABASE_DB_URL }}"
 
     steps:
       - name: Install PostgreSQL client
