@@ -2,19 +2,12 @@ name: backup
 
 on:
   schedule:
-    - cron: '0 16 * * *'   # UTC 16:00 = JST 01:00
+    - cron: '0 16 * * *'   # UTC16:00 = JST 01:00
   workflow_dispatch: {}
 
 jobs:
   dump:
     runs-on: ubuntu-latest
-
-    env:
-      PGHOST: aws-1-ap-northeast-1.pooler.supabase.com
-      PGPORT: '5432'
-      PGDATABASE: postgres
-      PGUSER: postgres.josqeoejhhimsdryxtnv   # ←プロジェクトID付きユーザー
-      PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}  # ← Supabase の「Database password」
 
     steps:
       - name: Install PostgreSQL client
@@ -22,21 +15,32 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
 
-      # SSL 必須で接続確認
+      # ここでユーザー名をベタ書きして確実に検証
       - name: Check connectivity (SSL)
         env:
           PGSSLMODE: require
+          PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}   # ← Supabase の「Database password」
         run: |
           set -e
-          psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -Atc 'select now()'
+          psql \
+            -h aws-1-ap-northeast-1.pooler.supabase.com \
+            -p 5432 \
+            -d postgres \
+            -U postgres.josqeoejhhimsdryxtnv \
+            -Atc 'select current_user, now()'
 
-      # ダンプ（SSL 必須）
       - name: Dump database (SSL)
         env:
           PGSSLMODE: require
+          PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}
         run: |
           set -e
-          pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -Fc -f backup.dump
+          pg_dump \
+            -h aws-1-ap-northeast-1.pooler.supabase.com \
+            -p 5432 \
+            -d postgres \
+            -U postgres.josqeoejhhimsdryxtnv \
+            -Fc -f backup.dump
 
       - name: Upload artifact (7days)
         uses: actions/upload-artifact@v4
