@@ -2,28 +2,20 @@ name: backup
 
 on:
   schedule:
-    - cron: '0 16 * * *'          # UTC 16:00 = JST 01:00
+    - cron: '0 16 * * *'   # UTC16:00 = JST 01:00
   workflow_dispatch: {}
 
 jobs:
   dump:
     runs-on: ubuntu-latest
     env:
-      PGURL: ${{ secrets.PG_URL_RO }}
-
+      PGURL: ${{ secrets.PG_URL_RO }}     # ← ?sslmode=… を含めない
+      PGSSLMODE: require                  # ← ここで SSL を強制
     steps:
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
-
-      # 一時デバッグ（接続できるか確認）
-      - name: Check pg connectivity (temporary)
-        run: |
-          set -e
-          psql --version
-          pg_isready -d "$PGURL" -t 10 || true
-          psql "$PGURL" -Atc 'select now()' || true
 
       - name: Dump database
         run: |
