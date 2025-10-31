@@ -9,13 +9,12 @@ jobs:
   dump:
     runs-on: ubuntu-latest
 
-    # ← ここをあなたのプロジェクトIDに置き換え
     env:
       PGHOST: aws-1-ap-northeast-1.pooler.supabase.com
       PGPORT: '5432'
       PGDATABASE: postgres
-      PGUSER: postgres.josqeoejhhimsdryxtnv   # 例: postgres.<プロジェクトID>
-      PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}
+      PGUSER: postgres.josqeoejhhimsdryxtnv   # ←プロジェクトID付きユーザー
+      PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}  # ← Supabase の「Database password」
 
     steps:
       - name: Install PostgreSQL client
@@ -23,22 +22,21 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
 
-      # デバッグ（接続できるか簡易確認）
-      - name: Check connectivity (temporary)
+      # SSL 必須で接続確認
+      - name: Check connectivity (SSL)
+        env:
+          PGSSLMODE: require
         run: |
           set -e
-          echo "USER=$PGUSER HOST=$PGHOST DB=$PGDATABASE"
-          pg_isready -h "$PGHOST" -p "$PGPORT" -d "$PGDATABASE" -U "$PGUSER" || true
-          PGPASSWORD="$PGPASSWORD" psql \
-            -h "$PGHOST" -p "$PGPORT" -d "$PGDATABASE" -U "$PGUSER" \
-            "sslmode=require" -Atc 'select now()' || true
+          psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -Atc 'select now()'
 
-      - name: Dump database (sslmode=require)
+      # ダンプ（SSL 必須）
+      - name: Dump database (SSL)
+        env:
+          PGSSLMODE: require
         run: |
           set -e
-          PGPASSWORD="$PGPASSWORD" pg_dump \
-            -h "$PGHOST" -p "$PGPORT" -d "$PGDATABASE" -U "$PGUSER" \
-            --sslmode=require -Fc -f backup.dump
+          pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -Fc -f backup.dump
 
       - name: Upload artifact (7days)
         uses: actions/upload-artifact@v4
