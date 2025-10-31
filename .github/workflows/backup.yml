@@ -17,13 +17,10 @@ jobs:
 
       - name: Check connectivity (SSL)
         env:
-          PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}   # ← Supabase の「Database password」（生の文字列）
+          PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}   # Supabase の「Database password」（そのまま生の文字列）
         run: |
           set -e
-          psql \
-            "host=aws-1-ap-northeast-1.pooler.supabase.com \
-             port=5432 dbname=postgres \
-             user=postgres.josqeoejhhimsdryxtnv sslmode=require" \
+          psql "host=aws-1-ap-northeast-1.pooler.supabase.com port=5432 dbname=postgres user=postgres.josqeoejhhimsdryxtnv sslmode=require" \
             -Atc 'select current_user, now()'
 
       - name: Dump database (SSL)
@@ -31,10 +28,7 @@ jobs:
           PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}
         run: |
           set -e
-          pg_dump \
-            "host=aws-1-ap-northeast-1.pooler.supabase.com \
-             port=5432 dbname=postgres \
-             user=postgres.josqeoejhhimsdryxtnv sslmode=require" \
+          pg_dump "host=aws-1-ap-northeast-1.pooler.supabase.com port=5432 dbname=postgres user=postgres.josqeoejhhimsdryxtnv sslmode=require" \
             -Fc -f backup.dump
 
       - name: Upload artifact (7days)
