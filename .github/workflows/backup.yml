@@ -15,31 +15,26 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
 
-      # ここでユーザー名をベタ書きして確実に検証
       - name: Check connectivity (SSL)
         env:
-          PGSSLMODE: require
-          PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}   # ← Supabase の「Database password」
+          PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}   # ← Supabase の「Database password」（生の文字列）
         run: |
           set -e
           psql \
-            -h aws-1-ap-northeast-1.pooler.supabase.com \
-            -p 5432 \
-            -d postgres \
-            -U postgres.josqeoejhhimsdryxtnv \
+            "host=aws-1-ap-northeast-1.pooler.supabase.com \
+             port=5432 dbname=postgres \
+             user=postgres.josqeoejhhimsdryxtnv sslmode=require" \
             -Atc 'select current_user, now()'
 
       - name: Dump database (SSL)
         env:
-          PGSSLMODE: require
           PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}
         run: |
           set -e
           pg_dump \
-            -h aws-1-ap-northeast-1.pooler.supabase.com \
-            -p 5432 \
-            -d postgres \
-            -U postgres.josqeoejhhimsdryxtnv \
+            "host=aws-1-ap-northeast-1.pooler.supabase.com \
+             port=5432 dbname=postgres \
+             user=postgres.josqeoejhhimsdryxtnv sslmode=require" \
             -Fc -f backup.dump
 
       - name: Upload artifact (7days)
