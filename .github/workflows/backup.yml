@@ -9,8 +9,8 @@ jobs:
   dump:
     runs-on: ubuntu-latest
     env:
-      PGURL: ${{ secrets.PG_URL_RO }}     # ← ?sslmode=… を含めない
-      PGSSLMODE: require                  # ← ここで SSL を強制
+      PGURL: ${{ secrets.PG_URL_RO }}   # ← 末尾に ?sslmode は付けない
+
     steps:
       - name: Install PostgreSQL client
         run: |
@@ -20,7 +20,7 @@ jobs:
       - name: Dump database
         run: |
           set -e
-          pg_dump --format=custom --file=backup.dump "$PGURL"
+          pg_dump --format=custom --file=backup.dump "${PGURL}?sslmode=require"
 
       - name: Upload artifact (7days)
         uses: actions/upload-artifact@v4
