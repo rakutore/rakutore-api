@@ -1,15 +1,13 @@
-name: backup
-
-on:
-  schedule:
-    - cron: '0 16 * * *'   # UTC16:00 = JST 01:00
-  workflow_dispatch: {}
-
 jobs:
   dump:
     runs-on: ubuntu-latest
     env:
-      PGURL: ${{ secrets.PG_URL_RO }}   # ← 末尾に ?sslmode は付けない
+      PGUSER:     postgres.josqeoejhhimsdryxtnv
+      PGPASSWORD: ${{ secrets.PG_DB_PASSWORD }}
+      PGHOST:     aws-1-ap-northeast-1.pooler.supabase.com
+      PGPORT:     '5432'
+      PGDATABASE: postgres
+      PGSSLMODE:  require
 
     steps:
       - name: Install PostgreSQL client
@@ -20,7 +18,7 @@ jobs:
       - name: Dump database
         run: |
           set -e
-          pg_dump --format=custom --file=backup.dump "${PGURL}?sslmode=require"
+          pg_dump -Fc -f backup.dump
 
       - name: Upload artifact (7days)
         uses: actions/upload-artifact@v4
