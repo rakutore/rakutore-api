@@ -1,31 +1,41 @@
 name: backup
 on:
   schedule:
-    - cron: '0 16 * * *'  # JST 01:00
+    - cron: '0 16 * * *'   # JST 01:00
   workflow_dispatch: {}
 
 jobs:
   dump:
     runs-on: ubuntu-latest
     env:
+      # Secrets → SUPABASE_DB_URL に入れた「URIまるごと」を使う
       DB_URL: "${{ secrets.SUPABASE_DB_URL }}"
 
     steps:
-      - name: Install PostgreSQL client
+      # ← これが“PostgreSQL 17 クライアントを入れるステップ”
+      - name: Install PostgreSQL 17 client (PGDG)
         run: |
+          sudo install -d -m 0755 /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
           sudo apt-get update -y
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y postgresql-client-17
+          /usr/lib/postgresql/17/bin/psql --version
+          /usr/lib/postgresql/17/bin/pg_dump --version
 
       - name: Connectivity
         run: |
           set -e
-          psql "$DB_URL" -c '\conninfo'
-          psql "$DB_URL" -Atc 'select current_user, now()'
+          /usr/lib/postgresql/17/bin/psql "$DB_URL" -c '\conninfo'
+          /usr/lib/postgresql/17/bin/psql "$DB_URL" -Atc 'select current_user, version()'
 
       - name: Dump database (SSL)
         run: |
           set -e
-          pg_dump --clean --if-exists --format=custom --file=backup.dump "$DB_URL"
+          /usr/lib/postgresql/17/bin/pg_dump \
+            --clean --if-exists --format=custom --file=backup.dump "$DB_URL"
 
       - name: Upload artifact (7days)
         uses: actions/upload-artifact@v4
