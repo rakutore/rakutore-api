@@ -3,26 +3,32 @@ name: daily-todos
 on:
   schedule:
     - cron: '0 0 * * *'   # UTC 0:00 = JST 9:00
-
+  workflow_dispatch: {}    # ← 手動テスト用
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      API_URL: ${{ secrets.API_URL }}
+      API_KEY: ${{ secrets.API_KEY }}
     steps:
       - name: 1) 健康チェック (/dbcheck)
         run: |
-          set -e
-          curl -sS "${{ secrets.API_URL }}/dbcheck" | tee /tmp/db.json
+          set -euo pipefail
+          curl -fsS "$API_URL/dbcheck" -o /tmp/db.json
+          echo "dbcheck OK"
 
       - name: 2) 本日のタスクを追加
         run: |
-          set -e
+          set -euo pipefail
           TITLE="定期タスク $(date +'%Y-%m-%d')"
-          curl -sS -X POST "${{ secrets.API_URL }}/todos" \
+          CODE=$(curl -sS -o /tmp/created.json -w '%{http_code}' \
+            -X POST "$API_URL/todos" \
             -H "Content-Type: application/json" \
-            -H "x-api-key: ${{ secrets.API_KEY }}" \
-            -d "{\"title\":\"$TITLE\"}"
-
+            -H "x-api-key: $API_KEY" \
+            -d "{\"title\":\"$TITLE\"}")
+          echo "HTTP $CODE"
+          test "$CODE" -ge 200 -a "$CODE" -lt 300
 
       - name: 3) 追加結果を表示
         run: |
