@@ -2,7 +2,7 @@ name: daily-backup-watchdog
 
 on:
   schedule:
-    - cron: '30 15 * * *'   # UTC 15:30 = JST 00:30。backupの実行時刻に合わせて調整
+    - cron: '30 16 * * *'   # UTC 16:30 = JST 01:30。backupの後ろに合わせてね
   workflow_dispatch: {}
 
 jobs:
@@ -17,29 +17,37 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            const owner = context.repo.owner;
-            const repo  = context.repo.repo;
+            const { owner, repo } = context.repo;
 
-            // 直近の backup.yml 実行を取得
-            const { data } = await github.rest.actions.listWorkflowRuns({
+            // 最新の backup 実行を取得
+            const runsRes = await github.rest.actions.listWorkflowRuns({
               owner, repo,
-              workflow_id: 'backup.yml',   // ← ファイル名が違うなら合わせる
+              workflow_id: 'backup.yml',   // ← 実ファイル名に合わせてね
               per_page: 1
             });
-            if (!data.workflow_runs.length) {
+            const runs = runsRes.data.workflow_runs || [];
+            if (runs.length === 0) {
               core.setFailed('No backup runs found');
               return;
             }
-            const run = data.workflow_runs[0];
-            const ok  = (run.conclusion === 'success');
 
+            const run = runs[0];
+
+            // まだ実行中ならスキップ（誤検知防止）
+            if (run.status !== 'completed') {
+              core.info(`Latest backup is ${run.status}. Skipping check.`);
+              return;
+            }
+
+            const ok = (run.conclusion === 'success');
             const today = new Date().toISOString().slice(0,10);
             const title = `Backup watchdog: ${today}`;
 
-            // 同名Issueの有無を確認
-            const q = `repo:${owner}/${repo} in:title "${title}" is:issue`;
-            const found = await github.search.issuesAndPullRequests({ q });
-            const existing = found.data.items[0];
+            // 同名Issueの有無を検索（REST配下で呼ぶのが正解）
+            const found = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} in:title "${title}" is:issue`
+            });
+            const existing = found.data.items?.[0];
 
             if (ok) {
               if (existing) {
