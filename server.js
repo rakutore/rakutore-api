@@ -8,7 +8,7 @@ app.use(express.json());
 // Railway/Proxy 配下でクライアントIPを正しく見るため
 app.set('trust proxy', 1);
 
-// ---- レート制限 --------------------------------------------------
+// ---- レート制限 -------------------------------------------------
 const readLimiter = rateLimit({
   windowMs: 60 * 1000,   // 1分
   limit: 60,             // 読み取り 60回/分/IP
@@ -35,10 +35,10 @@ function requireKey(req, res, next) {
 
 // ---- DB 接続（CA で厳格検証） ---------------------------------
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL,               // Railway の DATABASE_URL
   ssl: {
-    ca: process.env.PG_CA,
-    rejectUnauthorized: true
+    ca: process.env.PG_CA,                                  // Variables: PG_CA に証明書全文
+    rejectUnauthorized: true,
   },
 });
 
@@ -54,38 +54,64 @@ app.get('/dbcheck', readLimiter, async (_, res) => {
   }
 });
 
-// 認証デバッグ（必要なければ削除OK）
+// 認証デバッグ（必要なくなったら消してOK）
 app.get('/debug/auth', readLimiter, (req, res) => {
   const sent = (req.get('x-api-key') || '').trim();
   const expected = API_KEY;
   res.json({ sent, expected_len: expected.length, match: sent === expected });
 });
-// ---- ライセンス確認 API -----------------------------------------
-app.get('/license/status', readLimiter, async (req, res) => {
-  // Stripe の customer_id をクエリで受け取る
-  const customerId = req.query.customer_id;
 
-  if (!customerId) {
-    return res
-      .status(400)
-      .json({ ok: false, error: 'customer_id is required' });
+
+// ---- ライセンス確認 API -----------------------------------------
+// 使い方：
+//   1) email で確認したいとき
+//      GET /license/status?email=test@example.com
+//
+//   2) Stripe の customer_id で確認したいとき
+//      GET /license/status?customer_id=cus_xxx
+//
+// どちらか片方が入っていればOKです。
+app.get('/license/status', readLimiter, async (req, res) => {
+  const customerId = req.query.customer_id;
+  const email = req.query.email;
+
+  if (!customerId && !email) {
+    return res.status(400).json({
+      error: 'customer_id か email のどちらかを指定してください',
+    });
   }
 
   try {
-    const { rows } = await pool.query(
-      `
-      SELECT status, expires_at
-      FROM licenses
-      WHERE stripe_customer_id = $1
-      ORDER BY created_at DESC
-      LIMIT 1
-      `,
-      [customerId]
-    );
+    let sql, params;
 
-    // レコードなし → まだ一度も購入していない
+    if (customerId) {
+      sql = `
+        SELECT status, expires_at
+        FROM licenses
+        WHERE stripe_customer_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      params = [customerId];
+    } else {
+      sql = `
+        SELECT status, expires_at
+        FROM licenses
+        WHERE email = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      params = [email];
+    }
+
+    const { rows } = await pool.query(sql, params);
+
+    // レコードなし → まだ購入なし
     if (rows.length === 0) {
-      return res.json({ status: 'none' });
+      return res.json({
+        status: 'none',
+        expires_at: null,
+      });
     }
 
     const license = rows[0];
@@ -93,16 +119,11 @@ app.get('/license/status', readLimiter, async (req, res) => {
     const now = new Date();
     const expire = license.expires_at ? new Date(license.expires_at) : null;
 
-    // 基本は DB の status を採用（active / inactive など）
-    let status = license.status;
+    let status = license.status;  // DBのstatusを基本にする
 
-    // expires_at が入っている場合は、有効期限もチェックして上書き
     if (expire) {
-      if (expire <= now) {
-        status = 'expired';
-      } else {
-        status = 'active';
-      }
+      // expires_at が入っている場合は、有効期限で上書き
+      status = expire > now ? 'active' : 'expired';
     }
 
     return res.json({
@@ -111,48 +132,7 @@ app.get('/license/status', readLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error('license error:', err);
-    res.status(500).json({ ok: false, error: 'internal server error' });
-  }
-});
-
-// ---- ライセンス確認 API -----------------------------------------
-app.get('/license/status', readLimiter, async (req, res) => {
-  const customerId = req.query.customer_id;   // ← ここポイント
-
-  if (!customerId) {
-    return res.status(400).json({ ok: false, error: 'customer_id is required' });
-  }
-
-  try {
-    const { rows } = await pool.query(
-      'SELECT status, expires_at FROM licenses WHERE stripe_customer_id = $1 ORDER BY created_at DESC LIMIT 1',
-      [customerId]
-    );
-
-    // レコードなし → まだ購入していない
-    if (rows.length === 0) {
-      return res.json({ status: 'none' });
-    }
-
-    const license = rows[0];
-
-    const now = new Date();
-    const expire = license.expires_at ? new Date(license.expires_at) : null;
-
-    let status = license.status; // DBのstatusを基本とする
-
-    if (expire) {
-      // expires_at が入っている場合は期限もチェック
-      status = expire > now ? 'active' : 'expired';
-    }
-
-    return res.json({
-      status,
-      expires_at: license.expires_at
-    });
-  } catch (err) {
-    console.error('license error:', err);
-    res.status(500).json({ ok: false, error: 'internal server error' });
+    res.status(500).json({ error: 'internal server error' });
   }
 });
 
