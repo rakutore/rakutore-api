@@ -18,7 +18,7 @@ const readLimiter = rateLimit({
 
 const writeLimiter = rateLimit({
   windowMs: 60 * 1000,   // 1分
-  limit: 10,             // 書き込み 10回/分/IP（必要なら 20 に）
+  limit: 10,             // 書き込み 10回/分/IP
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -27,17 +27,22 @@ const writeLimiter = rateLimit({
 const API_KEY = (process.env.API_KEY || '').trim();
 function requireKey(req, res, next) {
   const got = (req.get('x-api-key') || '').trim();
-  if (got !== API_KEY) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  if (got !== API_KEY) {
+    return res.status(401).json({ ok: false, error: 'unauthorized' });
+  }
   next();
 }
 
 // ---- DB 接続（CA で厳格検証） ---------------------------------
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,               // Poolerでも直結でもOK
-  ssl: { ca: process.env.PG_CA, rejectUnauthorized: true }, // Variables: PG_CA に crt 全文
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    ca: process.env.PG_CA,
+    rejectUnauthorized: true
+  },
 });
 
-// ---- 公開ヘルスチェック（レート制限付き・一度だけ定義） ---------
+// ---- 公開ヘルスチェック（レート制限付き） ----------------------
 app.get('/healthz', readLimiter, (_, res) => res.send('ok'));
 
 app.get('/dbcheck', readLimiter, async (_, res) => {
@@ -49,15 +54,51 @@ app.get('/dbcheck', readLimiter, async (_, res) => {
   }
 });
 
-// （任意）認証デバッグ：問題なければ後で削除可
+// 認証デバッグ（必要なければ削除OK）
 app.get('/debug/auth', readLimiter, (req, res) => {
   const sent = (req.get('x-api-key') || '').trim();
   const expected = API_KEY;
   res.json({ sent, expected_len: expected.length, match: sent === expected });
 });
 
+// ---- ライセンス確認 API -----------------------------------------
+app.get('/license/status', readLimiter, async (req, res) => {
+  const userId = req.query.user_id;
+
+  if (!userId) {
+    return res.status(400).json({ ok: false, error: 'user_id is required' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT status, expires_at FROM licenses WHERE user_id = $1 LIMIT 1',
+      [userId]
+    );
+
+    // レコードなし → まだ購入していない
+    if (rows.length === 0) {
+      return res.json({ status: 'none' });
+    }
+
+    const license = rows[0];
+
+    const now = new Date();
+    const expire = new Date(license.expires_at);
+
+    const status = expire > now ? 'active' : 'expired';
+
+    return res.json({
+      status,
+      expires_at: license.expires_at
+    });
+  } catch (err) {
+    console.error('license error:', err);
+    res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
 // ---- TODO API ---------------------------------------------------
-// 一覧：公開（閲覧のみ鍵なし）＋ 読み取りレート制限
+// 一覧：公開（読み取りのみ鍵なし）
 app.get('/todos', readLimiter, async (_, res) => {
   try {
     const { rows } = await pool.query(
@@ -69,7 +110,7 @@ app.get('/todos', readLimiter, async (_, res) => {
   }
 });
 
-// 追加：鍵必須 + 書き込みレート制限
+// 追加：鍵必須
 app.post('/todos', writeLimiter, requireKey, async (req, res) => {
   try {
     const { title } = req.body || {};
@@ -85,11 +126,13 @@ app.post('/todos', writeLimiter, requireKey, async (req, res) => {
   }
 });
 
-// 更新：鍵必須 + 書き込みレート制限
+// 更新
 app.patch('/todos/:id', writeLimiter, requireKey, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ ok: false, error: 'invalid id' });
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ ok: false, error: 'invalid id' });
+    }
 
     const { title = null, done = null } = req.body || {};
     const { rows } = await pool.query(
@@ -100,6 +143,7 @@ app.patch('/todos/:id', writeLimiter, requireKey, async (req, res) => {
        returning id, title, done, created_at`,
       [title, done, id]
     );
+
     if (!rows.length) return res.status(404).json({ ok: false, error: 'not found' });
     res.json(rows[0]);
   } catch (err) {
@@ -107,11 +151,13 @@ app.patch('/todos/:id', writeLimiter, requireKey, async (req, res) => {
   }
 });
 
-// 削除：鍵必須 + 書き込みレート制限
+// 削除
 app.delete('/todos/:id', writeLimiter, requireKey, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ ok: false, error: 'invalid id' });
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ ok: false, error: 'invalid id' });
+    }
 
     const { rowCount } = await pool.query('delete from todos where id = $1', [id]);
     if (!rowCount) return res.status(404).json({ ok: false, error: 'not found' });
@@ -121,6 +167,6 @@ app.delete('/todos/:id', writeLimiter, requireKey, async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------------
+// ---- 起動 -------------------------------------------------------
 const port = process.env.PORT || 8080;
-app.listen(port, () => console.log('up'));
+app.listen(port, () => console.log('API running on port', port));
