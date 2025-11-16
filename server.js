@@ -63,16 +63,16 @@ app.get('/debug/auth', readLimiter, (req, res) => {
 
 // ---- ライセンス確認 API -----------------------------------------
 app.get('/license/status', readLimiter, async (req, res) => {
-  const userId = req.query.user_id;
+  const customerId = req.query.customer_id;   // ← ここポイント
 
-  if (!userId) {
-    return res.status(400).json({ ok: false, error: 'user_id is required' });
+  if (!customerId) {
+    return res.status(400).json({ ok: false, error: 'customer_id is required' });
   }
 
   try {
     const { rows } = await pool.query(
-      'SELECT status, expires_at FROM licenses WHERE user_id = $1 LIMIT 1',
-      [userId]
+      'SELECT status, expires_at FROM licenses WHERE stripe_customer_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [customerId]
     );
 
     // レコードなし → まだ購入していない
@@ -83,9 +83,14 @@ app.get('/license/status', readLimiter, async (req, res) => {
     const license = rows[0];
 
     const now = new Date();
-    const expire = new Date(license.expires_at);
+    const expire = license.expires_at ? new Date(license.expires_at) : null;
 
-    const status = expire > now ? 'active' : 'expired';
+    let status = license.status; // DBのstatusを基本とする
+
+    if (expire) {
+      // expires_at が入っている場合は期限もチェック
+      status = expire > now ? 'active' : 'expired';
+    }
 
     return res.json({
       status,
@@ -96,6 +101,7 @@ app.get('/license/status', readLimiter, async (req, res) => {
     res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
+
 
 // ---- TODO API ---------------------------------------------------
 // 一覧：公開（読み取りのみ鍵なし）
