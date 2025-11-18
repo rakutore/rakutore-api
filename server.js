@@ -168,6 +168,9 @@ app.post('/license/validate', async (req, res) => {
     expires_at: expiresAt,
   });
 });
+app.get('/license/validate', (req, res) => {
+  res.send('ここは POST 専用APIです。ブラウザからテストする時は curl や Postman を使ってね 🙏');
+});
 
 // ---------------------------
 // 動作確認用
