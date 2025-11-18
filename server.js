@@ -206,6 +206,29 @@ app.delete('/todos/:id', writeLimiter, requireKey, async (req, res) => {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
+// ===============================
+// Stripe Webhook 受信（シンプル版）
+// ===============================
+app.post("/stripe/webhook", (req, res) => {
+  try {
+    // Stripe から送られてきたJSONそのまま
+    const event = req.body;
+
+    // 何が来たかログに出す（まずはここだけ）
+    console.log("Stripe webhook received:", event.type, event.id);
+
+    // 将来ここに「メール送信」や「Supabase更新」を追加していく
+    // 例：
+    // if (event.type === "checkout.session.completed") { ... }
+    // if (event.type === "invoice.paid") { ... }
+    // if (event.type === "customer.subscription.deleted") { ... }
+
+    res.json({ received: true });
+  } catch (err) {
+    console.error("Webhook error:", err);
+    res.status(500).json({ error: "webhook error" });
+  }
+});
 
 // ---- 起動 -------------------------------------------------------
 const port = process.env.PORT || 8080;
