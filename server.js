@@ -3,16 +3,12 @@ const app = express();
 const Stripe = require('stripe');
 
 // ---------------------------
-// 先に Stripe Webhook 用 raw body
+// Webhook 専用の raw body ミドルウェア
 // ---------------------------
-app.use(
-  '/stripe/webhook',
-  express.raw({ type: 'application/json' })
-);
+// ここで「/stripe/webhook」のリクエストだけ raw で受け取る
+app.post('/stripe/webhook', express.raw({ type: 'application/json' }));
 
-// ---------------------------
-// その後に JSON パーサー
-// ---------------------------
+// それ以外は通常の JSON パーサーを使う
 app.use(express.json());
 
 // Stripe 認証
@@ -20,7 +16,7 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 // ---------------------------
-// Stripe Webhook エンドポイント
+// Stripe Webhook エンドポイント本体
 // ---------------------------
 app.post('/stripe/webhook', (req, res) => {
   const sig = req.headers['stripe-signature'];
