@@ -1,235 +1,91 @@
-const express = require('express');
-const rateLimit = require('express-rate-limit');
-const { Pool } = require('pg');
+import express from 'express';
+import Stripe from 'stripe';
+import { createClient } from '@supabase/supabase-js';
+import bodyParser from 'body-parser';
 
 const app = express();
-app.use(express.json());
 
-// Railway/Proxy 配下でクライアントIPを正しく見るため
-app.set('trust proxy', 1);
+// Stripe
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// ---- レート制限 -------------------------------------------------
-const readLimiter = rateLimit({
-  windowMs: 60 * 1000,   // 1分
-  limit: 60,             // 読み取り 60回/分/IP
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Supabase
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
-const writeLimiter = rateLimit({
-  windowMs: 60 * 1000,   // 1分
-  limit: 10,             // 書き込み 10回/分/IP
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Raw body needed for Stripe signature verification
+app.use(
+  bodyParser.raw({ type: 'application/json' })
+);
 
-// ---- API キー認証（更新系で使用） -------------------------------
-const API_KEY = (process.env.API_KEY || '').trim();
-function requireKey(req, res, next) {
-  const got = (req.get('x-api-key') || '').trim();
-  if (got !== API_KEY) {
-    return res.status(401).json({ ok: false, error: 'unauthorized' });
-  }
-  next();
-}
+app.post('/stripe/webhook', async (req, res) => {
+  const sig = req.headers['stripe-signature'];
 
-// ---- DB 接続（CA で厳格検証） ---------------------------------
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,               // Railway の DATABASE_URL
-  ssl: {
-    ca: process.env.PG_CA,                                  // Variables: PG_CA に証明書全文
-    rejectUnauthorized: true,
-  },
-});
-
-// ---- 公開ヘルスチェック（レート制限付き） ----------------------
-app.get('/healthz', readLimiter, (_, res) => res.send('ok'));
-
-app.get('/dbcheck', readLimiter, async (_, res) => {
+  let event;
   try {
-    const { rows } = await pool.query('select now() as now');
-    res.json({ ok: true, now: rows[0].now });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-// 認証デバッグ（必要なくなったら消してOK）
-app.get('/debug/auth', readLimiter, (req, res) => {
-  const sent = (req.get('x-api-key') || '').trim();
-  const expected = API_KEY;
-  res.json({ sent, expected_len: expected.length, match: sent === expected });
-});
-
-
-// ---- ライセンス確認 API -----------------------------------------
-// 使い方：
-//   1) email で確認したいとき
-//      GET /license/status?email=test@example.com
-//
-//   2) Stripe の customer_id で確認したいとき
-//      GET /license/status?customer_id=cus_xxx
-//
-// どちらか片方が入っていればOKです。
-app.get('/license/status', readLimiter, async (req, res) => {
-  const customerId = req.query.customer_id;
-  const email = req.query.email;
-
-  if (!customerId && !email) {
-    return res.status(400).json({
-      error: 'customer_id か email のどちらかを指定してください',
-    });
-  }
-
-  try {
-    let sql, params;
-
-    if (customerId) {
-      sql = `
-        SELECT status, expires_at
-        FROM licenses
-        WHERE stripe_customer_id = $1
-        ORDER BY created_at DESC
-        LIMIT 1
-      `;
-      params = [customerId];
-    } else {
-      sql = `
-        SELECT status, expires_at
-        FROM licenses
-        WHERE email = $1
-        ORDER BY created_at DESC
-        LIMIT 1
-      `;
-      params = [email];
-    }
-
-    const { rows } = await pool.query(sql, params);
-
-    // レコードなし → まだ購入なし
-    if (rows.length === 0) {
-      return res.json({
-        status: 'none',
-        expires_at: null,
-      });
-    }
-
-    const license = rows[0];
-
-    const now = new Date();
-    const expire = license.expires_at ? new Date(license.expires_at) : null;
-
-    let status = license.status;  // DBのstatusを基本にする
-
-    if (expire) {
-      // expires_at が入っている場合は、有効期限で上書き
-      status = expire > now ? 'active' : 'expired';
-    }
-
-    return res.json({
-      status,
-      expires_at: license.expires_at,
-    });
-  } catch (err) {
-    console.error('license error:', err);
-    res.status(500).json({ error: 'internal server error' });
-  }
-});
-
-
-// ---- TODO API ---------------------------------------------------
-// 一覧：公開（読み取りのみ鍵なし）
-app.get('/todos', readLimiter, async (_, res) => {
-  try {
-    const { rows } = await pool.query(
-      'select id, title, done, created_at from todos order by id desc'
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
     );
-    res.json(rows);
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    console.error('❌ Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
-});
 
-// 追加：鍵必須
-app.post('/todos', writeLimiter, requireKey, async (req, res) => {
+  console.log('🔔 Received event:', event.type);
+
   try {
-    const { title } = req.body || {};
-    if (!title) return res.status(400).json({ ok: false, error: 'title required' });
+    switch (event.type) {
 
-    const { rows } = await pool.query(
-      'insert into todos (title) values ($1) returning id, title, done, created_at',
-      [title]
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
+      /* -----------------------------------------
+       *  Checkout 完了 → ライセンス作成
+       * ----------------------------------------- */
+      case 'checkout.session.completed': {
+        const session = event.data.object;
 
-// 更新
-app.patch('/todos/:id', writeLimiter, requireKey, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ ok: false, error: 'invalid id' });
-    }
+        const customerId = session.customer;
+        const email = session.customer_details?.email || null;
 
-    const { title = null, done = null } = req.body || {};
-    const { rows } = await pool.query(
-      `update todos
-         set title = coalesce($1, title),
-             done  = coalesce($2, done)
-       where id = $3
-       returning id, title, done, created_at`,
-      [title, done, id]
-    );
+        console.log('🟢 checkout.session.completed', {
+          customerId,
+          email,
+        });
 
-    if (!rows.length) return res.status(404).json({ ok: false, error: 'not found' });
-    res.json(rows[0]);
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
+        const { error } = await supabase
+          .from('licenses')
+          .insert({
+            stripe_customer_id: customerId,
+            email: email,
+            status: 'active',
+            expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+          });
 
-// 削除
-app.delete('/todos/:id', writeLimiter, requireKey, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ ok: false, error: 'invalid id' });
-    }
+        if (error) console.error('❌ Supabase insert error:', error);
+        break;
+      }
 
-    const { rowCount } = await pool.query('delete from todos where id = $1', [id]);
-    if (!rowCount) return res.status(404).json({ ok: false, error: 'not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-// ===============================
-// Stripe Webhook 受信（シンプル版）
-// ===============================
-app.post("/stripe/webhook", (req, res) => {
-  try {
-    // Stripe から送られてきたJSONそのまま
-    const event = req.body;
+      /* -----------------------------------------
+       *  請求書支払い → 有効期限を延長
+       * ----------------------------------------- */
+      case 'invoice.paid': {
+        const invoice = event.data.object;
+        const customerId = invoice.customer;
 
-    // 何が来たかログに出す（まずはここだけ）
-    console.log("Stripe webhook received:", event.type, event.id);
+        console.log('🟢 invoice.paid', { customerId });
 
-    // 将来ここに「メール送信」や「Supabase更新」を追加していく
-    // 例：
-    // if (event.type === "checkout.session.completed") { ... }
-    // if (event.type === "invoice.paid") { ... }
-    // if (event.type === "customer.subscription.deleted") { ... }
+        const { error } = await supabase
+          .from('licenses')
+          .update({
+            status: 'active',
+            expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+          })
+          .eq('stripe_customer_id', customerId);
 
-    res.json({ received: true });
-  } catch (err) {
-    console.error("Webhook error:", err);
-    res.status(500).json({ error: "webhook error" });
-  }
-});
+        if (error) console.error('❌ Supabase update error:', error);
+        break;
+      }
 
-// ---- 起動 -------------------------------------------------------
-const port = process.env.PORT || 8080;
-app.listen(port, () => console.log('API running on port', port));
+      /* -----------------------------------------
+       *  サブスク解約 → ライセンス停止
