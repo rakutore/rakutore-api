@@ -2,15 +2,17 @@
   "name": "rakutore-api",
   "version": "1.0.0",
   "main": "server.js",
+  "license": "MIT",
+  "type": "commonjs",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.48.0",
-    "cors": "^2.8.5",
+    "@supabase/supabase-js": "^2.42.0",
     "express": "^4.19.2",
-    "express-rate-limit": "^7.1.0",
-    "pg": "^8.11.5",
-    "stripe": "^14.0.0"
+    "stripe": "^16.8.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
