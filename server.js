@@ -54,6 +54,14 @@ app.post('/stripe/webhook', (req, res) => {
 // ---------------------------
 // テスト用
 // ---------------------------
-app.get('/'
+app.get('/', (req, res) => {
+  res.send('API running');
+});
 
-        
+// ---------------------------
+// ポート
+// ---------------------------
+const port = process.env.PORT || 8080;
+app.listen(port, () => {
+  console.log(`API running on port ${port}`);
+});
