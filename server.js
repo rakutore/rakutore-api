@@ -3,6 +3,31 @@ const app = express();
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
 
+// ========== SendGrid ==========
+import sgMail from '@sendgrid/mail';
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+// メール送信関数
+async function sendEmail(to, subject, text) {
+    try {
+        const msg = {
+            to: to,
+            from: {
+                email: process.env.SENDGRID_FROM_EMAIL,
+                name: process.env.SENDGRID_FROM_NAME
+            },
+            subject: subject,
+            text: text
+        };
+
+        await sgMail.send(msg);
+        console.log("📧 Email sent to:", to);
+    } catch (error) {
+        console.error("❌ Email send error:", error);
+    }
+}
+
+
 // ---------------------------
 // Stripe & Supabase
 // ---------------------------
