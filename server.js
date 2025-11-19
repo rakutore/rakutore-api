@@ -82,14 +82,23 @@ app.post('/stripe/webhook', async (req, res) => {
     }
   }
 
-  // ② イベントごとの処理
-  const type = event.type;
+ // ② イベントごとの処理
+const type = event.type;
 
-  if (type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const customerId = session.customer;
-    const email =
-      session.customer_details?.email || session.customer_email || null;
+if (type === 'checkout.session.completed') {
+  const session = event.data.object;
+  const customerId = session.customer;
+
+  // ← ここを置き換え
+  const email =
+    session.customer_details?.email ||  // 通常はここに入る
+    session.customer_email ||           // 古い形式のセッション用
+    null;                               // どちらも無ければ null
+
+  console.log('checkout completed', { customerId, email });
+
+  // ↓ この下の Supabase 保存などの処理は、そのまま残しておいて大丈夫
+}
 
     // 初回購入：とりあえず active にしておく
     await upsertLicense({
