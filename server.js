@@ -217,11 +217,11 @@ app.get('/', (req, res) => {
 // SendGrid テスト送信用エンドポイント
 app.get('/debug/send-test', async (req, res) => {
   try {
-    await sendEmail(
-     happytomo365＠gmail.com  // ← ここを自分のアドレスに!!
-      '【テスト】Rakutore SendGrid メール',
-      'このメールが届いていれば、SendGrid 連携は成功です 🎉'
-    );
+await sendEmail(
+  "happytomo365@gmail.com",  // ← 半角の @ を使う！！
+  "【テスト】Rakutore SendGrid メール",
+  "このメールが届いていれば成功です 🎉"
+);
     res.send('テストメール送信しました！（ログと受信ボックスを確認してね）');
   } catch (e) {
     console.error(e);
