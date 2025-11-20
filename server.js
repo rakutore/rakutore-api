@@ -218,7 +218,7 @@ app.get('/', (req, res) => {
 app.get('/debug/send-test', async (req, res) => {
   try {
     await sendEmail(
-      tomosan100@yahoo.co.jp,  // ← ここを自分のアドレスに!!
+      tomosan100@yahoo.co.jp  // ← ここを自分のアドレスに!!
       '【テスト】Rakutore SendGrid メール',
       'このメールが届いていれば、SendGrid 連携は成功です 🎉'
     );
