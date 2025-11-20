@@ -1,36 +1,41 @@
+// ===================================================
+// 基本設定
+// ===================================================
 const express = require('express');
-const app = express();
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
+const sgMail = require('@sendgrid/mail');
 
-// ========== SendGrid ==========
-import sgMail from '@sendgrid/mail';
+const app = express();
+
+// ===================================================
+// SendGrid
+// ===================================================
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-// メール送信関数
+// 汎用メール関数
 async function sendEmail(to, subject, text) {
-    try {
-        const msg = {
-            to: to,
-            from: {
-                email: process.env.SENDGRID_FROM_EMAIL,
-                name: process.env.SENDGRID_FROM_NAME
-            },
-            subject: subject,
-            text: text
-        };
+  try {
+    const msg = {
+      to,
+      from: {
+        email: process.env.SENDGRID_FROM_EMAIL,
+        name: process.env.SENDGRID_FROM_NAME,
+      },
+      subject,
+      text,
+    };
 
-        await sgMail.send(msg);
-        console.log("📧 Email sent to:", to);
-    } catch (error) {
-        console.error("❌ Email send error:", error);
-    }
+    await sgMail.send(msg);
+    console.log("📧 Email sent:", to);
+  } catch (error) {
+    console.error("❌ SendGrid Error:", error);
+  }
 }
 
-
-// ---------------------------
+// ===================================================
 // Stripe & Supabase
-// ---------------------------
+// ===================================================
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -39,128 +44,124 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// ---------------------------
-// Webhook は raw で受け取る
-// ---------------------------
-app.post('/stripe/webhook', express.raw({ type: 'application/json' }));
+// ===================================================
+// Stripe Webhook（raw 必須）
+// ===================================================
+app.post(
+  '/stripe/webhook',
+  express.raw({ type: 'application/json' }),
+  async (req, res) => {
+    let event;
+    const sig = req.headers['stripe-signature'];
 
-// それ以外は普通に JSON
-app.use(express.json());
-
-// ---------------------------
-// Stripe Webhook 本体
-// ---------------------------
-app.post('/stripe/webhook', async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event;
-
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-  } catch (err) {
-    console.error('❌ Webhook signature verification failed:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
-
-  console.log('✅ Stripe event received:', event.type);
-
-  // ① ライセンス情報を更新するヘルパー
-  async function upsertLicense({ customerId, email, status, expiresAt }) {
-    const { error } = await supabase
-      .from('licenses')
-      .upsert(
-        {
-          stripe_customer_id: customerId,
-          email,
-          status,
-          expires_at: expiresAt,
-        },
-        { onConflict: 'stripe_customer_id' }
-      );
-
-    if (error) {
-      console.error('Supabase upsert error:', error.message);
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+    } catch (err) {
+      console.error('❌ Webhook signature error:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
     }
-  }
 
- // ② イベントごとの処理
-const type = event.type;
+    console.log("⚡ Stripe Event:", event.type);
 
-if (type === 'checkout.session.completed') {
-  const session = event.data.object;
-  const customerId = session.customer;
+    // -----------------------------
+    // Supabase にライセンスを保存
+    // -----------------------------
+    async function upsertLicense({ customerId, email, status, expiresAt }) {
+      const { error } = await supabase
+        .from('licenses')
+        .upsert(
+          {
+            stripe_customer_id: customerId,
+            email,
+            status,
+            expires_at: expiresAt,
+          },
+          { onConflict: 'stripe_customer_id' }
+        );
 
-  // ← ここを置き換え
-  const email =
-    session.customer_details?.email ||  // 通常はここに入る
-    session.customer_email ||           // 古い形式のセッション用
-    null;                               // どちらも無ければ null
+      if (error) console.error("Supabase Error:", error.message);
+    }
 
-  console.log('checkout completed', { customerId, email });
+    // -----------------------------
+    // 個別の Stripe イベント処理
+    // -----------------------------
+    const type = event.type;
 
-  // ↓ この下の Supabase 保存などの処理は、そのまま残しておいて大丈夫
-}
+    // ▶ 購入完了（初回）
+    if (type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const customerId = session.customer;
 
-    // 初回購入：とりあえず active にしておく
-    await upsertLicense({
-      customerId,
-      email,
-      status: 'active',
-      expiresAt: null, // 正確な期限は invoice.paid で更新
-    });
+      const email =
+        (session.customer_details && session.customer_details.email) ||
+        session.customer_email ||
+        null;
 
-    console.log('↪ checkout.session.completed handled');
-  }
+      console.log("checkout.session.completed", { customerId, email });
 
-  if (type === 'invoice.paid') {
-    const invoice = event.data.object;
-    const customerId = invoice.customer;
-    const email = invoice.customer_email || null;
+      // 初回は active のまま作成
+      await upsertLicense({
+        customerId,
+        email,
+        status: 'active',
+        expiresAt: null,
+      });
 
-    // 請求書の中から期間終了日を取り出す
-    const line = invoice.lines?.data?.[0];
-    const periodEndUnix = line?.period?.end; // 秒
-    const expiresAt =
-      periodEndUnix != null
-        ? new Date(periodEndUnix * 1000).toISOString()
+      console.log("↪ handled: checkout.session.completed");
+    }
+
+    // ▶ 支払い成功（更新された期限を保存）
+    else if (type === 'invoice.paid') {
+      const invoice = event.data.object;
+      const customerId = invoice.customer;
+      const email = invoice.customer_email || null;
+
+      const line = invoice.lines?.data?.[0];
+      const expiresAt = line?.period?.end
+        ? new Date(line.period.end * 1000).toISOString()
         : null;
 
-    await upsertLicense({
-      customerId,
-      email,
-      status: 'active',
-      expiresAt,
-    });
+      await upsertLicense({
+        customerId,
+        email,
+        status: 'active',
+        expiresAt,
+      });
 
-    console.log('↪ invoice.paid handled, expires_at =', expiresAt);
+      console.log("↪ handled: invoice.paid", expiresAt);
+    }
+
+    // ▶ 解約
+    else if (type === 'customer.subscription.deleted') {
+      const sub = event.data.object;
+      const customerId = sub.customer;
+
+      await upsertLicense({
+        customerId,
+        email: null,
+        status: 'canceled',
+        expiresAt: null,
+      });
+
+      console.log("↪ handled: subscription.deleted");
+    }
+
+    return res.json({ received: true });
   }
+);
 
-  if (type === 'customer.subscription.deleted') {
-    const sub = event.data.object;
-    const customerId = sub.customer;
+// ===================================================
+// Webhook 以外の API は JSON 解析
+// ===================================================
+app.use(express.json());
 
-    await upsertLicense({
-      customerId,
-      email: null, // 既存の email は壊さないので null
-      status: 'canceled',
-      expiresAt: null,
-    });
-
-    console.log('↪ customer.subscription.deleted handled');
-  }
-
-  return res.json({ received: true });
-});
-
-// ---------------------------
-// EA 用 ライセンス確認API
-// ---------------------------
+// ===================================================
+// EA ライセンス認証 API
+// ===================================================
 app.post('/license/validate', async (req, res) => {
-  // EA から送ってもらう情報（例）
-  const { email } = req.body; // まずはメールだけでシンプルに
+  const { email } = req.body;
 
-  if (!email) {
-    return res.status(400).json({ ok: false, reason: 'email_required' });
-  }
+  if (!email) return res.status(400).json({ ok: false, reason: "email_required" });
 
   const { data, error } = await supabase
     .from('licenses')
@@ -171,23 +172,20 @@ app.post('/license/validate', async (req, res) => {
     .maybeSingle();
 
   if (error) {
-    console.error('Supabase select error:', error.message);
-    return res.status(500).json({ ok: false, reason: 'server_error' });
+    console.error("Supabase read error:", error.message);
+    return res.status(500).json({ ok: false, reason: "server_error" });
   }
 
-  if (!data) {
-    return res.json({ ok: false, reason: 'not_found' });
-  }
+  if (!data) return res.json({ ok: false, reason: "not_found" });
 
   const now = new Date();
   const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
-
   let ok = false;
-  let reason = '';
+  let reason = "";
 
   if (data.status !== 'active') {
     ok = false;
-    reason = data.status; // inactive / canceled
+    reason = data.status;
   } else if (expiresAt && expiresAt < now) {
     ok = false;
     reason = 'expired';
@@ -202,18 +200,23 @@ app.post('/license/validate', async (req, res) => {
     expires_at: expiresAt,
   });
 });
+
+// GET は説明用
 app.get('/license/validate', (req, res) => {
-  res.send('ここは POST 専用APIです。ブラウザからテストする時は curl や Postman を使ってね 🙏');
+  res.send("POST 専用 API です");
 });
 
-// ---------------------------
-// 動作確認用
-// ---------------------------
+// ===================================================
+// 動作チェック
+// ===================================================
 app.get('/', (req, res) => {
-  res.send('API running');
+  res.send("API running");
 });
 
+// ===================================================
+// 起動
+// ===================================================
 const port = process.env.PORT || 8080;
 app.listen(port, () => {
-  console.log(`API running on port ${port}`);
+  console.log(`🚀 Server running on port ${port}`);
 });
