@@ -82,33 +82,79 @@ app.post(
       if (error) console.error("Supabase Error:", error.message);
     }
 
-    // -----------------------------
-    // 個別の Stripe イベント処理
-    // -----------------------------
-    const type = event.type;
+  // -----------------------------
+// 個別の Stripe イベント処理
+// -----------------------------
+const type = event.type;
 
-    // ▶ 購入完了（初回）
-    if (type === 'checkout.session.completed') {
-      const session = event.data.object;
-      const customerId = session.customer;
+// ▶ 購入完了（初回）
+if (type === 'checkout.session.completed') {
+  const session = event.data.object;
+  const customerId = session.customer;
 
-      const email =
-        (session.customer_details && session.customer_details.email) ||
-        session.customer_email ||
-        null;
+  const email =
+    (session.customer_details && session.customer_details.email) ||
+    session.customer_email ||
+    null;
 
-      console.log("checkout.session.completed", { customerId, email });
+  console.log("checkout.session.completed", { customerId, email });
 
-      // 初回は active のまま作成
-      await upsertLicense({
-        customerId,
-        email,
-        status: 'active',
-        expiresAt: null,
-      });
+  // 初回は active のまま作成
+  await upsertLicense({
+    customerId,
+    email,
+    status: 'active',
+    expiresAt: null,
+  });
 
-      console.log("↪ handled: checkout.session.completed");
-    }
+  // ★ EA ダウンロード案内メール送信
+  if (email) {
+    const downloadUrl = "https://rakutore.jp/ea-download"; // ← 実際のDLページのURLにあとで差し替え
+
+    const subject = "【Rakutore】EAダウンロードのご案内";
+
+    const body = `
+${email} 様
+
+このたびは「Rakutore EA」をご購入いただきありがとうございます。
+
+下記のURLからEAファイルをダウンロードしてご利用ください。
+
+▼EAダウンロードURL
+${downloadUrl}
+
+────────────────────────
+■ ライセンスについて
+────────────────────────
+・このEAは「${email}」のメールアドレスに対して発行されたライセンスでのみ有効です。
+・MT4にセットする際は、口座番号や環境がライセンス条件を満たしていることをご確認ください。
+・ライセンス条件に合わない環境では、EAが動作しない・もしくは停止する場合があります。
+
+────────────────────────
+■ ご利用上の注意
+────────────────────────
+・本EAの再配布、転売、共有などはご遠慮ください。
+・ご利用は自己責任となります。相場状況によっては損失が発生する可能性があります。
+・必ずデモ口座などで動作確認を行った上で、本番運用を開始してください。
+
+────────────────────────
+■ お問い合わせ
+────────────────────────
+ご不明な点がございましたら、以下のメールアドレスまでご連絡ください。
+
+support@rakutore.jp
+
+今後とも、どうぞよろしくお願いいたします。
+
+Rakutore 運営
+`;
+
+    await sendEmail(email, subject, body);
+    console.log("📧 EA ダウンロード案内メールを送信しました:", email);
+  }
+
+  console.log("↪ handled: checkout.session.completed");
+}
 
     // ▶ 支払い成功（更新された期限を保存）
     else if (type === 'invoice.paid') {
