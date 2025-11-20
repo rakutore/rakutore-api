@@ -11,8 +11,12 @@
     "@supabase/supabase-js": "^2.42.0",
     "express": "^4.19.2",
     "stripe": "^16.8.0"
+    "@sendgrid/mail": "^7.7.0"
+
   },
   "engines": {
     "node": ">=20"
+   
+
   }
 }
