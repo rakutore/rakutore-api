@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Rakutore Anchor EA ダウンロード</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {
+  font-family: "Meiryo", sans-serif;
+  background: #f5f7fa;
+  margin: 0;
+  padding: 20px;
+  color: #333;
+}
+.container {
+  max-width: 800px;
+  margin: auto;
+  background: #fff;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+h1 {
+  font-size: 26px;
+  margin-bottom: 10px;
+}
+h2 {
+  margin-top: 30px;
+  font-size: 20px;
+}
+a.download-btn {
+  display: inline-block;
+  background: #007bff;
+  color: #fff;
+  padding: 14px 25px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 18px;
+  margin: 15px 0;
+}
+a.download-btn:hover { background: #0056c3; }
+code {
+  background: #eee;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+.box {
+  background: #fafafa;
+  padding: 15px;
+  border-left: 4px solid #007bff;
+  margin: 20px 0;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<h1>Rakutore Anchor EA ダウンロードページ</h1>
+
+<p>
+ご購入ありがとうございます！  
+下記より EA をダウンロードできます。
+</p>
+
+<!-- ▼ EAダウンロードボタン -->
+<a class="download-btn" href="/Rakutore-Anchor.zip" download>Rakutore Anchor EA をダウンロード</a>
+
+<p>（MT4 →「ファイル」→「データフォルダを開く」→ <code>MQL4/Experts</code> に入れてください）</p>
+
+
+<h2>1. インストール手順</h2>
+
+<ol>
+  <li>上のボタンから <strong>Rakutore-Anchor.zip</strong> をダウンロード</li>
+  <li>zip を解凍し、<code>Rakutore_Anchor.ex4</code> を取り出す</li>
+  <li>MT4 → <strong>ファイル → データフォルダを開く</strong></li>
+  <li><code>MQL4 → Experts</code> に ex4 を入れる</li>
+  <li>MT4 を再起動し、ナビゲーター内に EA が表示されることを確認する</li>
+</ol>
+
+
+<h2>2. WebRequest の設定（必須）</h2>
+
+<div class="box">
+<b>必ず設定してください。これを忘れると EA が動作しません。</b>
+</div>
+
+MT4 の設定：
+
+<ol>
+  <li>MT4 → <strong>ツール → オプション</strong></li>
+  <li>「Expert Advisors」タブを開く</li>
+  <li>
+    <strong>“以下のURLへのWebRequestを許可する” にチェック</strong>
+  </li>
+  <li>
+    URL に以下を追加：
+
+    <div class="box">
+      <code>https://api.rakutore.jp</code>
+    </div>
+  </li>
+  <li>OK を押して閉じる</li>
+</ol>
+
+
+<h2>3. EA のライセンス設定</h2>
+
+<p>EAのパラメータ <code>LicenseEmail</code> に、購入時のメールアドレスを入力してください。</p>
+
+<div class="box">
+例：<br>
+<code>LicenseEmail = happytomo365@gmail.com</code>
+</div>
+
+<p>メールアドレスが一致しないと EA は動作しません。</p>
+
+
+<h2>4. 動作仕様（簡易説明）</h2>
+
+<ul>
+  <li>初弾エントリー → 固定アンカー方式</li>
+  <li>逆行でナンピン、順行でピラミッドを自動管理</li>
+  <li>日次トータルpips監視（利益/損失で自動停止）</li>
+  <li>スプレッド制限・クールダウン・再起動復元あり</li>
+  <li>毎日5分ごとにライセンス自動確認</li>
+</ul>
+
+
+<h2>5. サポート</h2>
+<p>
+何かご不明点があれば、いつでもご連絡ください。<br>
+<strong>Email：</strong> support@rakutore.jp
+</p>
+
+</div>
+
+</body>
+</html>
