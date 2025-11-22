@@ -2,14 +2,15 @@
 // 基本設定
 // ===================================================
 const express = require('express');
+const path = require('path');   // ← これ追加
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
 const sgMail = require('@sendgrid/mail');
 
 const app = express();
 
-// ✅ publicフォルダを静的配信（download.html と zip を配れるようにする）
-app.use(express.static("public"));
+// ✅ publicフォルダを静的配信（絶対パス）
+app.use(express.static(path.join(__dirname, "public")));
 
 
 // ===================================================
