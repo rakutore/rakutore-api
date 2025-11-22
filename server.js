@@ -8,6 +8,10 @@ const sgMail = require('@sendgrid/mail');
 
 const app = express();
 
+// ✅ publicフォルダを静的配信（download.html と zip を配れるようにする）
+app.use(express.static("public"));
+
+
 // ===================================================
 // SendGrid
 // ===================================================
