@@ -7,9 +7,9 @@ const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
 const sgMail = require('@sendgrid/mail');
 
-const app = express(); // ★これが一番最初に必要
+const app = express();
 
-// 静的ファイル (public フォルダ)
+// 静的ファイル
 app.use(express.static(path.join(__dirname, "public")));
 
 
@@ -68,7 +68,6 @@ app.post(
 
     console.log("⚡ Stripe Event:", event.type);
 
-    // Supabase の upsert 関数
     async function upsertLicense({ customerId, email, status, expiresAt }) {
       const { error } = await supabase
         .from('licenses')
@@ -96,8 +95,6 @@ app.post(
         (session.customer_details && session.customer_details.email) ||
         session.customer_email ||
         null;
-
-      console.log("checkout.session.completed", { customerId, email });
 
       await upsertLicense({
         customerId,
@@ -175,57 +172,111 @@ app.use(express.json());
 
 
 // ===================================================
-// EA ライセンス認証 API
+// EA ライセンス認証 API（MT4対応 / 1メール1口座縛り）
 // ===================================================
-app.post('/license/validate', async (req, res) => {
-  console.log("REQ BODY:", req.body);
+app.post(
+  '/license/validate',
+  express.urlencoded({ extended: false }), // form
+  express.text({ type: '*/*' }),           // text fallback
+  async (req, res) => {
 
-  const { email } = req.body;
+    console.log("REQ BODY:", req.body);
 
-  if (!email) {
-    return res.status(400).json({ ok: false, reason: "email_required" });
+    let email = req.body?.email;
+    let account = req.body?.account;
+
+    // MT4の生文字列も拾う
+    if (typeof req.body === "string") {
+      const m1 = req.body.match(/email=([^&\s]+)/);
+      const m2 = req.body.match(/account=([^&\s]+)/);
+      if (m1) email = decodeURIComponent(m1[1]);
+      if (m2) account = decodeURIComponent(m2[1]);
+    }
+
+    if (!email) {
+      return res.status(400).json({ ok: false, reason: "email_required" });
+    }
+    if (!account) {
+      return res.status(400).json({ ok: false, reason: "account_required" });
+    }
+
+    account = Number(account);
+
+    const { data, error } = await supabase
+      .from('licenses')
+      .select('id, status, expires_at, bound_account')
+      .eq('email', email)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Supabase read error:", error.message);
+      return res.status(500).json({ ok: false, reason: "server_error" });
+    }
+
+    if (!data) {
+      return res.json({ ok: false, reason: "not_found" });
+    }
+
+    const now = new Date();
+    const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
+
+    // ステータスチェック
+    if (data.status !== "active") {
+      return res.json({ ok: false, reason: data.status });
+    }
+    if (expiresAt && expiresAt < now) {
+      return res.json({ ok: false, reason: "expired" });
+    }
+
+    // 初回バインド
+    if (!data.bound_account) {
+      const { error: upErr } = await supabase
+        .from("licenses")
+        .update({
+          bound_account: account,
+          bound_at: now.toISOString(),
+          last_check_at: now.toISOString(),
+        })
+        .eq("id", data.id);
+
+      if (upErr) {
+        console.error("Supabase update error:", upErr.message);
+        return res.status(500).json({ ok: false, reason: "server_error" });
+      }
+
+      return res.json({
+        ok: true,
+        reason: "active_bound",
+        bound_account: account,
+        expires_at: expiresAt
+      });
+    }
+
+    // 別口座 → NG
+    if (Number(data.bound_account) !== account) {
+      return res.json({
+        ok: false,
+        reason: "account_mismatch",
+        bound_account: data.bound_account
+      });
+    }
+
+    // 同じ口座 → OK
+    await supabase
+      .from("licenses")
+      .update({ last_check_at: now.toISOString() })
+      .eq("id", data.id);
+
+    return res.json({
+      ok: true,
+      reason: "active",
+      bound_account: data.bound_account,
+      expires_at: expiresAt
+    });
   }
-
-  const { data, error } = await supabase
-    .from('licenses')
-    .select('status, expires_at')
-    .eq('email', email)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Supabase read error:", error.message);
-    return res.status(500).json({ ok: false, reason: "server_error" });
-  }
-
-  if (!data) {
-    return res.json({ ok: false, reason: "not_found" });
-  }
-
-  const now = new Date();
-  const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
-
-  let ok = false;
-  let reason = "";
-
-  if (data.status !== 'active') {
-    ok = false;
-    reason = data.status;
-  } else if (expiresAt && expiresAt < now) {
-    ok = false;
-    reason = "expired";
-  } else {
-    ok = true;
-    reason = "active";
-  }
-
-  return res.json({
-    ok,
-    reason,
-    expires_at: expiresAt,
-  });
-});
+);
 
 
 // ===================================================
