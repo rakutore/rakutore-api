@@ -12,7 +12,6 @@ const app = express();
 // 静的ファイル
 app.use(express.static(path.join(__dirname, "public")));
 
-
 // ===================================================
 // SendGrid
 // ===================================================
@@ -20,7 +19,7 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 async function sendEmail(to, subject, text) {
   try {
-    const msg = {
+    await sgMail.send({
       to,
       from: {
         email: process.env.SENDGRID_FROM_EMAIL,
@@ -28,14 +27,12 @@ async function sendEmail(to, subject, text) {
       },
       subject,
       text,
-    };
-    await sgMail.send(msg);
+    });
     console.log("📧 Email sent:", to);
   } catch (error) {
     console.error("❌ SendGrid Error:", error);
   }
 }
-
 
 // ===================================================
 // Stripe / Supabase
@@ -47,7 +44,6 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
 
 // ===================================================
 // Stripe Webhook（raw 必須）
@@ -68,7 +64,8 @@ app.post(
 
     console.log("⚡ Stripe Event:", event.type);
 
-    async function upsertLicense({ customerId, email, status, expiresAt }) {
+    // 🔥 plan_type を扱えるよう改良済み
+    async function upsertLicense({ customerId, email, status, expiresAt, planType }) {
       const { error } = await supabase
         .from('licenses')
         .upsert(
@@ -77,6 +74,7 @@ app.post(
             email,
             status,
             expires_at: expiresAt,
+            plan_type: planType,
           },
           { onConflict: 'stripe_customer_id' }
         );
@@ -86,7 +84,7 @@ app.post(
 
     const type = event.type;
 
-    // ▼ 初回購入
+    // ▼ 初回購入（＝トライアル開始）
     if (type === 'checkout.session.completed') {
       const s = event.data.object;
 
@@ -96,13 +94,16 @@ app.post(
         s.customer_email ||
         null;
 
+      // 初回は trial 扱い
       await upsertLicense({
         customerId,
         email,
         status: 'active',
         expiresAt: null,
+        planType: 'trial'
       });
 
+      // EA ダウンロード通知メール
       if (email) {
         const downloadUrl = "https://rakutore.jp/ea-download";
         const subject = "【Rakutore】EAダウンロードのご案内";
@@ -124,7 +125,7 @@ Rakutore運営
       console.log("↪ handled: checkout.session.completed");
     }
 
-    // ▼ サブスク更新
+    // ▼ サブスク更新 / 初回課金成功（paid）
     else if (type === 'invoice.paid') {
       const invoice = event.data.object;
 
@@ -136,17 +137,19 @@ Rakutore運営
         ? new Date(line.period.end * 1000).toISOString()
         : null;
 
+      // 初回の invoice.paid で paid 化
       await upsertLicense({
         customerId,
         email,
         status: 'active',
         expiresAt,
+        planType: 'paid'
       });
 
       console.log("↪ handled: invoice.paid");
     }
 
-    // ▼ サブスク解約
+    // ▼ 解約
     else if (type === 'customer.subscription.deleted') {
       const sub = event.data.object;
 
@@ -155,6 +158,7 @@ Rakutore運営
         email: null,
         status: 'canceled',
         expiresAt: null,
+        planType: 'canceled'
       });
 
       console.log("↪ handled: subscription.deleted");
@@ -164,14 +168,12 @@ Rakutore運営
   }
 );
 
-
 // ===================================================
 // Webhook 以外の JSON パース
 // ===================================================
 app.use(express.urlencoded({ extended: false }));
 app.use(express.text({ type: 'text/*' }));
 app.use(express.json());
-
 
 // ===================================================
 // EA ライセンス認証 API
@@ -183,9 +185,7 @@ app.post('/license/validate', async (req, res) => {
     let email;
     let account;
 
-    // ----------------------------
-    // MT4 の変な NULL (\x00) を除去
-    // ----------------------------
+    // MT4 の NULL (\x00) 除去
     const raw = typeof req.body === 'string'
       ? req.body.replace(/\x00/g, '')
       : '';
@@ -193,74 +193,68 @@ app.post('/license/validate', async (req, res) => {
     const formEmail = req.body?.email?.replace?.(/\x00/g, '');
     const formAccount = req.body?.account?.replace?.(/\x00/g, '');
 
-    // 通常の form
-    email = formEmail || null;
-    account = formAccount || null;
-
-    // 生文字列 fallback
-    if (!email) {
-      const m = raw.match(/email=([^&]+)/);
-      if (m) email = decodeURIComponent(m[1]);
-    }
-    if (!account) {
-      const n = raw.match(/account=([^&]+)/);
-      if (n) account = decodeURIComponent(n[1]);
-    }
+    email = formEmail || raw.match(/email=([^&]+)/)?.[1] || null;
+    account = formAccount || raw.match(/account=([^&]+)/)?.[1] || null;
 
     if (!email) return res.json({ ok: false, reason: "email_required" });
     if (!account) return res.json({ ok: false, reason: "account_required" });
 
     account = Number(String(account).replace(/\D/g, ''));
 
-   // ----------------------------
-// Supabase 読み取り
-// ----------------------------
-const { data, error } = await supabase
-  .from("licenses")
-  .select("id, status, expires_at, bound_account, plan_type")
-  .eq("email", email)
-  .order("created_at", { ascending: false })
-  .limit(1)
-  .maybeSingle();
+    // ----------------------------
+    // Supabase 読み取り（plan_type 追加済み）
+    // ----------------------------
+    const { data, error } = await supabase
+      .from("licenses")
+      .select("id, status, expires_at, bound_account, plan_type")
+      .eq("email", email)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-if (error) {
-  console.error("Supabase read error:", error.message);
-  return res.json({ ok: false, reason: "server_error" });
-}
+    if (error) {
+      console.error("Supabase read error:", error.message);
+      return res.json({ ok: false, reason: "server_error" });
+    }
 
-if (!data) {
-  return res.json({ ok: false, reason: "not_found" });
-}
+    if (!data) {
+      return res.json({ ok: false, reason: "not_found" });
+    }
 
-const now = new Date();
-const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
+    const now = new Date();
+    const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
 
-// ----------------------------
-// トライアル中はデモ口座だけ許可
-// ----------------------------
-if (data.plan_type === "trial") {
+    // ----------------------------
+    // トライアル中はデモのみ許可（核心）
+    // ----------------------------
+    if (data.plan_type === "trial") {
 
-  const serverName =
-    (req.body.server ||
-     (raw.match(/server=([^&]+)/)?.[1]) ||
-     "")
-     .toLowerCase();
+      const serverName =
+        (req.body.server ||
+         (raw.match(/server=([^&]+)/)?.[1]) ||
+         "")
+        .toLowerCase();
 
-  if (!serverName.includes("demo")) {
-    return res.json({
-      ok: false,
-      reason: "trial_demo_only"
-    });
-  }
-}
+      console.log("SERVER NAME:", serverName);
 
-if (data.status !== "active") {
-  return res.json({ ok: false, reason: data.status });
-}
+      if (!serverName.includes("demo")) {
+        return res.json({
+          ok: false,
+          reason: "trial_demo_only"
+        });
+      }
+    }
 
-if (expiresAt && expiresAt < now) {
-  return res.json({ ok: false, reason: "expired" });
-}
+    // ----------------------------
+    // 通常ステータスチェック
+    // ----------------------------
+    if (data.status !== "active") {
+      return res.json({ ok: false, reason: data.status });
+    }
+
+    if (expiresAt && expiresAt < now) {
+      return res.json({ ok: false, reason: "expired" });
+    }
 
     // ----------------------------
     // 初回バインド
@@ -320,7 +314,6 @@ if (expiresAt && expiresAt < now) {
   }
 });
 
-
 // ===================================================
 // 動作チェック
 // ===================================================
@@ -331,7 +324,6 @@ app.get('/', (req, res) => {
 app.get('/healthz', (req, res) => {
   res.send("ok");
 });
-
 
 // ===================================================
 // 起動
