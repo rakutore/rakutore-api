@@ -234,6 +234,25 @@ app.post('/license/validate', async (req, res) => {
 
     const now = new Date();
     const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
+　// ----------------------------
+// トライアル中はデモ口座だけ許可
+// ----------------------------
+if (data.plan_type === "trial") {
+  // server パラメータを取得
+  const serverName =
+    (req.body.server ||
+     (raw.match(/server=([^&]+)/)?.[1]) ||
+     "")
+     .toLowerCase();
+
+  // demo が含まれなければリアル口座 → NG
+  if (!serverName.includes("demo")) {
+    return res.json({
+      ok: false,
+      reason: "trial_demo_only"
+    });
+  }
+}
 
     if (data.status !== "active") {
       return res.json({ ok: false, reason: data.status });
