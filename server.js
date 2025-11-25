@@ -12,6 +12,7 @@ const app = express();
 // 静的ファイル
 app.use(express.static(path.join(__dirname, "public")));
 
+
 // ===================================================
 // SendGrid
 // ===================================================
@@ -19,7 +20,7 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 async function sendEmail(to, subject, text) {
   try {
-    await sgMail.send({
+    const msg = {
       to,
       from: {
         email: process.env.SENDGRID_FROM_EMAIL,
@@ -27,12 +28,14 @@ async function sendEmail(to, subject, text) {
       },
       subject,
       text,
-    });
+    };
+    await sgMail.send(msg);
     console.log("📧 Email sent:", to);
   } catch (error) {
     console.error("❌ SendGrid Error:", error);
   }
 }
+
 
 // ===================================================
 // Stripe / Supabase
@@ -44,6 +47,7 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
 
 // ===================================================
 // Stripe Webhook（raw 必須）
@@ -64,7 +68,9 @@ app.post(
 
     console.log("⚡ Stripe Event:", event.type);
 
-    // 🔥 plan_type を扱えるよう改良済み
+    // ===================================================
+    // 共通アップサート関数
+    // ===================================================
     async function upsertLicense({ customerId, email, status, expiresAt, planType }) {
       const { error } = await supabase
         .from('licenses')
@@ -74,7 +80,7 @@ app.post(
             email,
             status,
             expires_at: expiresAt,
-            plan_type: planType,
+            plan_type: planType,        // ★追加
           },
           { onConflict: 'stripe_customer_id' }
         );
@@ -84,7 +90,9 @@ app.post(
 
     const type = event.type;
 
-    // ▼ 初回購入（＝トライアル開始）
+    // ===================================================
+    // 🔵 1) checkout.session.completed （申込完了）
+    // ===================================================
     if (type === 'checkout.session.completed') {
       const s = event.data.object;
 
@@ -94,16 +102,16 @@ app.post(
         s.customer_email ||
         null;
 
-      // 初回は trial 扱い
+      // ★ checkout 時点はまだ課金されていない → trial 扱い
       await upsertLicense({
         customerId,
         email,
         status: 'active',
         expiresAt: null,
-        planType: 'trial'
+        planType: 'trial',
       });
 
-      // EA ダウンロード通知メール
+      // ダウンロードメール
       if (email) {
         const downloadUrl = "https://rakutore.jp/ea-download";
         const subject = "【Rakutore】EAダウンロードのご案内";
@@ -125,7 +133,9 @@ Rakutore運営
       console.log("↪ handled: checkout.session.completed");
     }
 
-    // ▼ サブスク更新 / 初回課金成功（paid）
+    // ===================================================
+    // 🔵 2) invoice.paid （課金成功 → 本会員）
+    // ===================================================
     else if (type === 'invoice.paid') {
       const invoice = event.data.object;
 
@@ -133,23 +143,31 @@ Rakutore運営
       const email = invoice.customer_email;
 
       const line = invoice.lines?.data?.[0];
+      const priceId = line?.price?.id;
       const expiresAt = line?.period?.end
         ? new Date(line.period.end * 1000).toISOString()
         : null;
 
-      // 初回の invoice.paid で paid 化
+      // ★ 即時スタートプランの価格ID
+      const instantPriceId = "price_1SXKrLFWKU6pTKTIQmNXmesu";
+
+      // ★ 特別判定：即時スタートは最初から paid
+      const isInstantPlan = priceId === instantPriceId;
+
       await upsertLicense({
         customerId,
         email,
         status: 'active',
         expiresAt,
-        planType: 'paid'
+        planType: isInstantPlan ? 'paid' : 'paid',
       });
 
       console.log("↪ handled: invoice.paid");
     }
 
-    // ▼ 解約
+    // ===================================================
+    // 🔵 3) customer.subscription.deleted （解約）
+    // ===================================================
     else if (type === 'customer.subscription.deleted') {
       const sub = event.data.object;
 
@@ -158,7 +176,7 @@ Rakutore運営
         email: null,
         status: 'canceled',
         expiresAt: null,
-        planType: 'canceled'
+        planType: 'canceled',
       });
 
       console.log("↪ handled: subscription.deleted");
@@ -168,12 +186,14 @@ Rakutore運営
   }
 );
 
+
 // ===================================================
 // Webhook 以外の JSON パース
 // ===================================================
 app.use(express.urlencoded({ extended: false }));
 app.use(express.text({ type: 'text/*' }));
 app.use(express.json());
+
 
 // ===================================================
 // EA ライセンス認証 API
@@ -184,25 +204,46 @@ app.post('/license/validate', async (req, res) => {
 
     let email;
     let account;
+    let server;
 
-    // MT4 の NULL (\x00) 除去
+    // ----------------------------
+    // MT4 の NULL 除去
+    // ----------------------------
     const raw = typeof req.body === 'string'
       ? req.body.replace(/\x00/g, '')
       : '';
 
     const formEmail = req.body?.email?.replace?.(/\x00/g, '');
     const formAccount = req.body?.account?.replace?.(/\x00/g, '');
+    const formServer = req.body?.server?.replace?.(/\x00/g, '');
 
-    email = formEmail || raw.match(/email=([^&]+)/)?.[1] || null;
-    account = formAccount || raw.match(/account=([^&]+)/)?.[1] || null;
+    email = formEmail || null;
+    account = formAccount || null;
+    server = formServer || null;
+
+    // 生文字列 fallback
+    if (!email) {
+      const m = raw.match(/email=([^&]+)/);
+      if (m) email = decodeURIComponent(m[1]);
+    }
+    if (!account) {
+      const n = raw.match(/account=([^&]+)/);
+      if (n) account = decodeURIComponent(n[1]);
+    }
+    if (!server) {
+      const s = raw.match(/server=([^&]+)/);
+      if (s) server = decodeURIComponent(s[1]);
+    }
 
     if (!email) return res.json({ ok: false, reason: "email_required" });
     if (!account) return res.json({ ok: false, reason: "account_required" });
+    if (!server) return res.json({ ok: false, reason: "server_required" });
 
     account = Number(String(account).replace(/\D/g, ''));
+    const serverName = server.toLowerCase();
 
     // ----------------------------
-    // Supabase 読み取り（plan_type 追加済み）
+    // Supabase 読み取り
     // ----------------------------
     const { data, error } = await supabase
       .from("licenses")
@@ -224,36 +265,24 @@ app.post('/license/validate', async (req, res) => {
     const now = new Date();
     const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
 
-    // ----------------------------
-    // トライアル中はデモのみ許可（核心）
-    // ----------------------------
-    if (data.plan_type === "trial") {
-
-      const serverName =
-        (req.body.server ||
-         (raw.match(/server=([^&]+)/)?.[1]) ||
-         "")
-        .toLowerCase();
-
-      console.log("SERVER NAME:", serverName);
-
-      if (!serverName.includes("demo")) {
-        return res.json({
-          ok: false,
-          reason: "trial_demo_only"
-        });
-      }
-    }
-
-    // ----------------------------
-    // 通常ステータスチェック
-    // ----------------------------
     if (data.status !== "active") {
       return res.json({ ok: false, reason: data.status });
     }
 
     if (expiresAt && expiresAt < now) {
       return res.json({ ok: false, reason: "expired" });
+    }
+
+    // ===================================================
+    // 🟡 トライアルプラン → デモのみ許可
+    // ===================================================
+    if (data.plan_type === "trial") {
+      if (!serverName.includes("demo")) {
+        return res.json({
+          ok: false,
+          reason: "trial_demo_only"
+        });
+      }
     }
 
     // ----------------------------
@@ -314,6 +343,7 @@ app.post('/license/validate', async (req, res) => {
   }
 });
 
+
 // ===================================================
 // 動作チェック
 // ===================================================
@@ -324,6 +354,7 @@ app.get('/', (req, res) => {
 app.get('/healthz', (req, res) => {
   res.send("ok");
 });
+
 
 // ===================================================
 // 起動
