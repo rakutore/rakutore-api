@@ -212,40 +212,40 @@ app.post('/license/validate', async (req, res) => {
 
     account = Number(String(account).replace(/\D/g, ''));
 
-    // ----------------------------
-    // Supabase 読み取り
-    // ----------------------------
-    const { data, error } = await supabase
-      .from("licenses")
-      .select("id, status, expires_at, bound_account")
-      .eq("email", email)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+   // ----------------------------
+// Supabase 読み取り
+// ----------------------------
+const { data, error } = await supabase
+  .from("licenses")
+  .select("id, status, expires_at, bound_account, plan_type")
+  .eq("email", email)
+  .order("created_at", { ascending: false })
+  .limit(1)
+  .maybeSingle();
 
-    if (error) {
-      console.error("Supabase read error:", error.message);
-      return res.json({ ok: false, reason: "server_error" });
-    }
+if (error) {
+  console.error("Supabase read error:", error.message);
+  return res.json({ ok: false, reason: "server_error" });
+}
 
-    if (!data) {
-      return res.json({ ok: false, reason: "not_found" });
-    }
+if (!data) {
+  return res.json({ ok: false, reason: "not_found" });
+}
 
-    const now = new Date();
-    const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
-　// ----------------------------
+const now = new Date();
+const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
+
+// ----------------------------
 // トライアル中はデモ口座だけ許可
 // ----------------------------
 if (data.plan_type === "trial") {
-  // server パラメータを取得
+
   const serverName =
     (req.body.server ||
      (raw.match(/server=([^&]+)/)?.[1]) ||
      "")
      .toLowerCase();
 
-  // demo が含まれなければリアル口座 → NG
   if (!serverName.includes("demo")) {
     return res.json({
       ok: false,
@@ -254,13 +254,13 @@ if (data.plan_type === "trial") {
   }
 }
 
-    if (data.status !== "active") {
-      return res.json({ ok: false, reason: data.status });
-    }
+if (data.status !== "active") {
+  return res.json({ ok: false, reason: data.status });
+}
 
-    if (expiresAt && expiresAt < now) {
-      return res.json({ ok: false, reason: "expired" });
-    }
+if (expiresAt && expiresAt < now) {
+  return res.json({ ok: false, reason: "expired" });
+}
 
     // ----------------------------
     // 初回バインド
