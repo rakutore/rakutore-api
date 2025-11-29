@@ -19,13 +19,13 @@ jobs:
           curl -fsS "$API_URL/healthz"
           echo "healthz OK"
 
-      - name: 2) 今日のタスクを追加 (/api/todos)
+          - name: 2) 今日のタスクを追加 (/todos)
         run: |
           set -euo pipefail
           TITLE="定期タスク $(date +'%Y-%m-%d')"
 
           CODE=$(curl -sS -o /tmp/created.json -w '%{http_code}' \
-            -X POST "$API_URL/api/todos" \
+            -X POST "$API_URL/todos" \
             -H "Content-Type: application/json" \
             -H "x-api-key: $API_KEY" \
             -d "{\"title\":\"$TITLE\"}" )
