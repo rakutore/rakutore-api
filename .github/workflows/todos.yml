@@ -2,8 +2,8 @@ name: daily-todos
 
 on:
   schedule:
-    - cron: '0 0 * * *'   # UTC 0:00 = JST 9:00 実行
-  workflow_dispatch: {}    # 手動実行
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
 
 jobs:
   run:
@@ -16,7 +16,7 @@ jobs:
       - name: 1) 健康チェック (/healthz)
         run: |
           set -euo pipefail
-          curl -fsS "${API_URL%/}/healthz"
+          curl -fsS "$API_URL/healthz"
           echo "healthz OK"
 
       - name: 2) 今日のタスクを追加 (/todos)
@@ -25,7 +25,7 @@ jobs:
           TITLE="定期タスク $(date +'%Y-%m-%d')"
 
           CODE=$(curl -sS -o /tmp/created.json -w '%{http_code}' \
-            -X POST "${API_URL%/}/todos" \
+            -X POST "$API_URL/todos" \
             -H "Content-Type: application/json" \
             -H "x-api-key: $API_KEY" \
             -d "{\"title\":\"$TITLE\"}" )
