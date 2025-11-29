@@ -11,12 +11,13 @@ jobs:
     env:
       API_URL: ${{ secrets.API_URL }}
       API_KEY: ${{ secrets.API_KEY }}
+
     steps:
-      - name: 1) 健康チェック (/dbcheck)
+      - name: 1) 健康チェック (/healthz)
         run: |
           set -euo pipefail
-          curl -fsS "$API_URL/dbcheck" -o /tmp/db.json
-          echo "dbcheck OK"
+          curl -fsS "$API_URL/healthz" -o /tmp/health.json
+          echo "healthz OK"
 
       - name: 2) 本日のタスクを追加
         run: |
