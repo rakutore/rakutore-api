@@ -17,18 +17,21 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsS "$API_URL/healthz"
-          echo "healthz OK"
-
-           - name: 2) 今日のタスクを追加 (/todos)
+          echo "healthz OK"      - name: 2) 今日のタスクを追加 (DEBUG)
         run: |
           set -euo pipefail
           TITLE="定期タスク $(date +'%Y-%m-%d')"
 
-          echo "API_URL=[$API_URL]"
-          echo "curl で叩く URL はこれです:"
-          echo "[$API_URL/todos]"
+          echo "🔍 API_URL の中身:"
+          printf '[%s]\n' "$API_URL"
 
-          echo "---- curl -v 開始 ----"
+          echo "🔍 実際に叩くURL:"
+          printf '[%s/todos]\n' "$API_URL"
+
+          echo "🔍 curl 実行コマンド:"
+          echo curl -v -X POST "$API_URL/todos"
+
+          echo "---------------- curl -v start ----------------"
           curl -v \
             -X POST "$API_URL/todos" \
             -H "Content-Type: application/json" \
@@ -36,7 +39,8 @@ jobs:
             -d "{\"title\":\"$TITLE\"}" \
             -o /tmp/created.json \
             -w '\nHTTP_STATUS=%{http_code}\n'
-          echo "---- curl -v 終了 ----"
+          echo "---------------- curl -v end ----------------"
+
 
 
       - name: 3) 結果を表示
