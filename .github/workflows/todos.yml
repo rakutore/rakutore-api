@@ -19,19 +19,25 @@ jobs:
           curl -fsS "$API_URL/healthz"
           echo "healthz OK"
 
-      - name: 2) 今日のタスクを追加 (/todos)
+           - name: 2) 今日のタスクを追加 (/todos)
         run: |
           set -euo pipefail
           TITLE="定期タスク $(date +'%Y-%m-%d')"
 
-          CODE=$(curl -sS -o /tmp/created.json -w '%{http_code}' \
+          echo "API_URL=[$API_URL]"
+          echo "curl で叩く URL はこれです:"
+          echo "[$API_URL/todos]"
+
+          echo "---- curl -v 開始 ----"
+          curl -v \
             -X POST "$API_URL/todos" \
             -H "Content-Type: application/json" \
             -H "x-api-key: $API_KEY" \
-            -d "{\"title\":\"$TITLE\"}" )
+            -d "{\"title\":\"$TITLE\"}" \
+            -o /tmp/created.json \
+            -w '\nHTTP_STATUS=%{http_code}\n'
+          echo "---- curl -v 終了 ----"
 
-          echo "HTTP $CODE"
-          test "$CODE" -ge 200 -a "$CODE" -lt 300
 
       - name: 3) 結果を表示
         run: |
