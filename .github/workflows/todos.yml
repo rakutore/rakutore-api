@@ -2,8 +2,8 @@ name: daily-todos
 
 on:
   schedule:
-    - cron: '0 0 * * *'   # UTC 0:00 = JST 9:00
-  workflow_dispatch: {}    # ← 手動テスト用
+    - cron: '0 0 * * *'   # UTC 0:00 = JST 9:00 実行
+  workflow_dispatch: {}    # 手動実行
 
 jobs:
   run:
@@ -16,22 +16,24 @@ jobs:
       - name: 1) 健康チェック (/healthz)
         run: |
           set -euo pipefail
-          curl -fsS "$API_URL/healthz" -o /tmp/health.json
+          curl -fsS "$API_URL/healthz"
           echo "healthz OK"
 
-      - name: 2) 本日のタスクを追加
+      - name: 2) 今日のタスクを追加 (/todos)
         run: |
           set -euo pipefail
           TITLE="定期タスク $(date +'%Y-%m-%d')"
+
           CODE=$(curl -sS -o /tmp/created.json -w '%{http_code}' \
             -X POST "$API_URL/todos" \
             -H "Content-Type: application/json" \
             -H "x-api-key: $API_KEY" \
-            -d "{\"title\":\"$TITLE\"}")
+            -d "{\"title\":\"$TITLE\"}" )
+
           echo "HTTP $CODE"
           test "$CODE" -ge 200 -a "$CODE" -lt 300
 
-      - name: 3) 追加結果を表示
+      - name: 3) 結果を表示
         run: |
-          echo "---- created ----"
+          echo "----- CREATED -----"
           cat /tmp/created.json
