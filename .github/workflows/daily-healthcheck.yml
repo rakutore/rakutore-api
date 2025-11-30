@@ -1,4 +1,4 @@
-name: api-healthcheck
+name: daily-healthcheck
 
 on:
   schedule:
