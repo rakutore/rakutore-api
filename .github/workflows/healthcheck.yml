@@ -1,0 +1,30 @@
+name: api-healthcheck
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # UTC 0:00 = JST 9:00 毎日チェック
+  workflow_dispatch: {}    # 手動でも実行できる
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      API_URL: ${{ secrets.API_URL }}   # もう設定済みのやつを再利用
+
+    steps:
+      - name: 1) /healthz をチェック
+        run: |
+          set -euo pipefail
+
+          echo "✅ API health check: $API_URL/healthz"
+
+          # ステータスコードだけ取る
+          STATUS=$(curl -s -o /tmp/healthz.txt -w '%{http_code}' "$API_URL/healthz" || echo "000")
+          echo "HTTP STATUS = $STATUS"
+
+          echo "----- Response body -----"
+          cat /tmp/healthz.txt || true
+          echo "-------------------------"
+
+          # 200〜299 以外なら失敗扱いにする
+          test "$STATUS" -ge 200 -a "$STATUS" -lt 300
