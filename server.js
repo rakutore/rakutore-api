@@ -76,7 +76,7 @@ app.post(
             email,
             status,
             expires_at: expiresAt,
-            plan_type: planType,   // ← ★追加
+            plan_type: planType,
           },
           { onConflict: 'stripe_customer_id' }
         );
@@ -86,14 +86,6 @@ app.post(
 
     const type = event.type;
 
-    // ▼ price ID を取得する関数
-    function getPriceId(obj) {
-      try {
-        return obj.lines.data[0].price.id;
-      } catch {
-        return null;
-      }
-    }
 
     // ================================
     // 1) checkout.session.completed
@@ -106,14 +98,13 @@ app.post(
         s.customer_email ||
         null;
 
-      // --- 価格IDを取得 ---
+      // --- 価格ID取得 ---
       const priceId = s?.display_items?.[0]?.price?.id ||
                       s?.line_items?.data?.[0]?.price?.id ||
                       null;
 
-      // --- プラン種類決定 ---
-      let planType = "paid"; // デフォルト
-
+      // --- プラン判定 ---
+      let planType = "paid";
       if (priceId === "price_1SXAQUFWKU6pTKTIyPRFtc3Q") {
         planType = "trial";
       }
@@ -126,31 +117,11 @@ app.post(
         planType
       });
 
-      // ダウンロードメール
-      if (email) {
-        const downloadUrl = "https://rakutore.jp/ea-download";
-        const subject = "【Rakutore】EAダウンロードのご案内";
-        const body = `
-${email} 様
-
-ご購入ありがとうございます。
-
-▼EAダウンロードURL
-${downloadUrl}
-
-ご不明点は support@rakutore.jp までご連絡ください。
-Rakutore運営
-        `;
-
-        await sendEmail(email, subject, body);
-      }
-
       console.log("↪ handled: checkout.session.completed");
     }
 
-
     // ================================
-    // 2) invoice.paid（更新 or 初回課金）
+    // 2) invoice.paid
     // ================================
     else if (type === 'invoice.paid') {
       const invoice = event.data.object;
@@ -164,7 +135,6 @@ Rakutore運営
 
       const priceId = line.price.id;
 
-      // --- プラン判定 ---
       const planType =
         priceId === "price_1SXAQUFWKU6pTKTIyPRFtc3Q"
           ? "trial"
@@ -180,7 +150,6 @@ Rakutore運営
 
       console.log("↪ handled: invoice.paid");
     }
-
 
     // ================================
     // 3) subscription.deleted
@@ -217,15 +186,10 @@ app.use(express.json());
 // ===================================================
 app.post('/license/validate', async (req, res) => {
   try {
-    console.log("REQ RAW BODY:", req.body);
-
     let email;
     let account;
     let server;
 
-    // ----------------------------
-    // MT4 の NULL 除去
-    // ----------------------------
     const raw = typeof req.body === 'string'
       ? req.body.replace(/\x00/g, '')
       : '';
@@ -238,30 +202,12 @@ app.post('/license/validate', async (req, res) => {
     account = formAccount || null;
     server = formServer || null;
 
-    // 生文字列 fallback
-    if (!email) {
-      const m = raw.match(/email=([^&]+)/);
-      if (m) email = decodeURIComponent(m[1]);
-    }
-    if (!account) {
-      const n = raw.match(/account=([^&]+)/);
-      if (n) account = decodeURIComponent(n[1]);
-    }
-    if (!server) {
-      const s = raw.match(/server=([^&]+)/);
-      if (s) server = decodeURIComponent(s[1]);
-    }
-
     if (!email) return res.json({ ok: false, reason: "email_required" });
     if (!account) return res.json({ ok: false, reason: "account_required" });
     if (!server) return res.json({ ok: false, reason: "server_required" });
 
     account = Number(String(account).replace(/\D/g, ''));
-    const serverName = server.toLowerCase();
 
-    // ----------------------------
-    // Supabase 読み取り
-    // ----------------------------
     const { data, error } = await supabase
       .from("licenses")
       .select("id, status, expires_at, bound_account, plan_type")
@@ -270,61 +216,48 @@ app.post('/license/validate', async (req, res) => {
       .limit(1)
       .maybeSingle();
 
-    if (error) {
-      console.error("Supabase read error:", error.message);
-      return res.json({ ok: false, reason: "server_error" });
-    }
-
-    if (!data) {
-      return res.json({ ok: false, reason: "not_found" });
-    }
+    if (!data) return res.json({ ok: false, reason: "not_found" });
 
     const now = new Date();
     const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
 
-    if (data.status !== "active") {
+    if (data.status !== "active")
       return res.json({ ok: false, reason: data.status });
-    }
 
-    if (expiresAt && expiresAt < now) {
+    if (expiresAt && expiresAt < now)
       return res.json({ ok: false, reason: "expired" });
+
+    // トライアル → デモのみ
+    if (data.plan_type === "trial") {
+      const s =
+        (req.body.server ||
+         (raw.match(/server=([^&]+)/)?.[1]) ||
+         "")
+         .toLowerCase();
+
+      if (!s.includes("demo")) {
+        return res.json({ ok: false, reason: "trial_demo_only" });
+      }
     }
-// ----------------------------
-// トライアル中はデモ口座のみ許可
-// ----------------------------
-if (data.plan_type === "trial") {
-  const serverName =
-    (req.body.server ||
-     (raw.match(/server=([^&]+)/)?.[1]) ||
-     "")
-     .toLowerCase();
 
-  if (!serverName.includes("demo")) {
-    return res.json({
-      ok: false,
-      reason: "trial_demo_only"
-    });
-  }
-}
-
-
-    // ----------------------------
+    // =============================
     // 初回バインド
-    // ----------------------------
+    // =============================
     if (!data.bound_account) {
-      const { error: upErr } = await supabase
+
+      await supabase
         .from("licenses")
         .update({
           bound_account: account,
           bound_at: now.toISOString(),
           last_check_at: now.toISOString(),
+
+          // 🎯 有料(plan_type==="paid") の場合のみ last_active_at を記録
+          last_active_at: data.plan_type === "paid"
+            ? now.toISOString()
+            : null,
         })
         .eq("id", data.id);
-
-      if (upErr) {
-        console.error("Supabase update error:", upErr.message);
-        return res.json({ ok: false, reason: "server_error" });
-      }
 
       return res.json({
         ok: true,
@@ -334,9 +267,7 @@ if (data.plan_type === "trial") {
       });
     }
 
-    // ----------------------------
     // 別口座 → NG
-    // ----------------------------
     if (Number(data.bound_account) !== account) {
       return res.json({
         ok: false,
@@ -345,12 +276,21 @@ if (data.plan_type === "trial") {
       });
     }
 
-    // ----------------------------
-    // 同じ口座 → OK
-    // ----------------------------
+    // =============================
+    // 正常（継続利用）
+    // =============================
+    const updateData = {
+      last_check_at: now.toISOString(),
+    };
+
+    // 🎯 有料だけ last_active_at を更新
+    if (data.plan_type === "paid") {
+      updateData.last_active_at = now.toISOString();
+    }
+
     await supabase
       .from("licenses")
-      .update({ last_check_at: now.toISOString() })
+      .update(updateData)
       .eq("id", data.id);
 
     return res.json({
