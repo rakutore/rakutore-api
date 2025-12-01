@@ -18,13 +18,13 @@ jobs:
 
           echo "✅ API health check: $API_URL/healthz"
 
-          # ステータスコードだけ取る
-          STATUS=$(curl -s -o /tmp/healthz.txt -w '%{http_code}' "$API_URL/healthz" || echo "000")
+          # /healthz にアクセスしてステータスコードと本文を取得
+          STATUS=$(curl -o /tmp/healthz.txt -w '%{http_code}' "$API_URL/healthz")
           echo "HTTP STATUS = $STATUS"
 
           echo "----- Response body -----"
           cat /tmp/healthz.txt || true
           echo "-------------------------"
 
-          # 200〜299 以外なら失敗扱いにする
+          # 200〜299 以外なら失敗扱い
           test "$STATUS" -ge 200 -a "$STATUS" -lt 300
