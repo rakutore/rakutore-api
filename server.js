@@ -317,6 +317,19 @@ app.get('/', (req, res) => {
 app.get('/healthz', (req, res) => {
   res.send("ok");
 });
+app.get('/test-email', async (req, res) => {
+  try {
+    await sendEmail(
+      "happytomo365@gmail.com", 
+      "SendGrid テストメール",
+      "これは SendGrid が正常に動作していることを確認するテストメールです。"
+    );
+    res.send("テストメール送信完了！");
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("テストメール送信エラー");
+  }
+});
 
 
 // ===================================================
