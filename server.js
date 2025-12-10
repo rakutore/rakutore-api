@@ -47,6 +47,31 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+const crypto = require('crypto'); // ← まだ無ければ一行追加
+
+// ===================================================
+// ダウンロード用トークン発行（1回だけ有効）
+// ===================================================
+async function issueDownloadToken(email) {
+  try {
+    // ランダムな 32文字のトークン
+    const token = crypto.randomBytes(16).toString('hex');
+
+    const { error } = await supabase
+      .from('download_tokens')
+      .insert({ email, token });
+
+    if (error) {
+      console.error('❌ issueDownloadToken error:', error.message);
+      return null;
+    }
+
+    return token;
+  } catch (err) {
+    console.error('❌ issueDownloadToken fatal error:', err);
+    return null;
+  }
+}
 
 // ===================================================
 // Stripe Webhook（raw 必須）
