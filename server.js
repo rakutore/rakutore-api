@@ -112,38 +112,67 @@ app.post(
     const type = event.type;
 
 
-    // ================================
-    // 1) checkout.session.completed
-    // ================================
-    if (type === 'checkout.session.completed') {
-      const s = event.data.object;
-      const customerId = s.customer;
-      const email =
-        (s.customer_details && s.customer_details.email) ||
-        s.customer_email ||
-        null;
+ // ================================
+// 1) checkout.session.completed
+// ================================
+if (type === 'checkout.session.completed') {
+  const s = event.data.object;
+  const customerId = s.customer;
+  const email =
+    (s.customer_details && s.customer_details.email) ||
+    s.customer_email ||
+    null;
 
-      // --- 価格ID取得 ---
-      const priceId = s?.display_items?.[0]?.price?.id ||
-                      s?.line_items?.data?.[0]?.price?.id ||
-                      null;
+  // --- 価格ID取得 ---
+  const priceId = s?.display_items?.[0]?.price?.id ||
+                  s?.line_items?.data?.[0]?.price?.id ||
+                  null;
 
-      // --- プラン判定 ---
-      let planType = "paid";
-      if (priceId === "price_1SXAQUFWKU6pTKTIyPRFtc3Q") {
-        planType = "trial";
-      }
+  // --- プラン判定 ---
+  let planType = "paid";
+  if (priceId === "price_1SXAQUFWKU6pTKTIyPRFtc3Q") {
+    planType = "trial";
+  }
 
-      await upsertLicense({
-        customerId,
-        email,
-        status: 'active',
-        expiresAt: null,
-        planType
-      });
+  await upsertLicense({
+    customerId,
+    email,
+    status: 'active',
+    expiresAt: null,
+    planType
+  });
 
-      console.log("↪ handled: checkout.session.completed");
-    }
+  console.log("↪ handled: checkout.session.completed");
+
+  // ★★★★★ ここから追加！ ★★★★★
+
+  // 1回だけ有効のトークン発行
+  const token = await issueDownloadToken(email);
+
+  if (token) {
+    const downloadUrl = `https://api.rakutore.jp/download?token=${token}`;
+
+    // SendGridでメール送信
+    await sendEmail(
+      email,
+      "【Rakutore Anchor】EAダウンロードのご案内",
+      `ご購入ありがとうございます。
+
+以下のURLからEAをダウンロードできます。（1回のみ有効）
+
+${downloadUrl}
+
+※ 一度アクセスすると無効になります。
+※ 再ダウンロードが必要な場合は support@rakutore.jp までご連絡ください。
+
+Rakutore Anchor 運営`
+    );
+
+    console.log("📩 ダウンロードURL送信:", downloadUrl);
+  }
+
+  // ★★★★★ 追加ここまで ★★★★★
+}
 
     // ================================
     // 2) invoice.paid
