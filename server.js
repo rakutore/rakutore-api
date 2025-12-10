@@ -234,6 +234,45 @@ app.use(express.urlencoded({ extended: false }));
 app.use(express.text({ type: 'text/*' }));
 app.use(express.json());
 
+// ===================================================
+// ダウンロードAPI（1回だけ有効のToken方式）
+// ===================================================
+app.get('/download', async (req, res) => {
+  const token = req.query.token;
+  if (!token) {
+    return res.status(400).send("Token required");
+  }
+
+  // token が DB に登録されているか確認
+  const { data, error } = await supabase
+    .from('download_tokens')
+    .select('email')
+    .eq('token', token)
+    .maybeSingle();
+
+  if (error || !data) {
+    return res.status(403).send("Invalid or expired token");
+  }
+
+  const email = data.email;
+
+  // Token は “1回使用” → 削除して無効化
+  await supabase.from('download_tokens').delete().eq('token', token);
+
+  // Supabase の ZIP ファイルの署名付きURLを取得
+  const { data: signed, error: signedErr } = await supabase.storage
+    .from('ea-secure')
+    .createSignedUrl('RakutoreAnchor.zip', 60); // URL有効期限60秒
+
+  if (signedErr || !signed?.signedUrl) {
+    return res.status(500).send("Could not generate download link");
+  }
+
+  // 実際のZIPへリダイレクト
+  return res.redirect(signed.signedUrl);
+});
+
+
 
 // ===================================================
 // EA ライセンス認証 API
