@@ -50,28 +50,70 @@ const supabase = createClient(
 const crypto = require('crypto'); // ← まだ無ければ一行追加
 
 // ===================================================
-// ダウンロード用トークン発行（1回だけ有効）
+// EAダウンロード（1回だけ有効）
+// GET /download?token=xxxxx
 // ===================================================
-async function issueDownloadToken(email) {
+app.get('/download', async (req, res) => {
   try {
-    // ランダムな 32文字のトークン
-    const token = crypto.randomBytes(16).toString('hex');
+    const token = req.query.token;
 
-    const { error } = await supabase
-      .from('download_tokens')
-      .insert({ email, token });
-
-    if (error) {
-      console.error('❌ issueDownloadToken error:', error.message);
-      return null;
+    if (!token) {
+      return res.status(400).send('トークンがありません。');
     }
 
-    return token;
+    // 1) トークンを検索
+    const { data, error } = await supabase
+      .from('download_tokens')
+      .select('*')
+      .eq('token', token)
+      .maybeSingle();
+
+    if (error) {
+      console.error('❌ download_tokens select error:', error.message);
+      return res.status(500).send('サーバーエラーが発生しました。');
+    }
+
+    if (!data) {
+      return res.status(404).send('このURLは無効です。');
+    }
+
+    // すでに使われていたらNG（1回きり）
+    if (data.used_at) {
+      return res.status(410).send('このURLはすでに使用されています。');
+    }
+
+    // 2) Supabase Storage から署名付きURLを発行（有効 60秒）
+    const filePath = 'Rakutore_Anchor_v3.zip'; // ea-secure 内のファイル名
+    const { data: signed, error: signedError } = await supabase
+      .storage
+      .from('ea-secure')
+      .createSignedUrl(filePath, 60); // 60秒有効
+
+    if (signedError || !signed) {
+      console.error('❌ createSignedUrl error:', signedError?.message);
+      return res.status(500).send('ダウンロードリンクの作成に失敗しました。');
+    }
+
+    // 3) used_at を埋める（1回使ったら無効）
+    const now = new Date().toISOString();
+
+    const { error: updateError } = await supabase
+      .from('download_tokens')
+      .update({ used_at: now })
+      .eq('id', data.id);
+
+    if (updateError) {
+      console.error('❌ download_tokens update error:', updateError.message);
+      // ここで return しない：リンクはとりあえず有効にする
+    }
+
+    // 4) 署名付きURLへリダイレクトしてZIPをダウンロード
+    return res.redirect(signed.signedUrl);
   } catch (err) {
-    console.error('❌ issueDownloadToken fatal error:', err);
-    return null;
+    console.error('❌ /download unexpected error:', err);
+    return res.status(500).send('予期せぬエラーが発生しました。');
   }
-}
+});
 
 // ===================================================
 // Stripe Webhook（raw 必須）
