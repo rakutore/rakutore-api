@@ -318,9 +318,13 @@ app.post('/download', async (req, res) => {
       return res.status(400).send('Invalid or expired token');
     }
 
-    if (data.used_at) {
-      return res.status(410).send('This link has already been used.');
-    }
+    // すでに使われていたらNG（1回きり）
+if (data.used_at) {
+  return res
+    .status(410)
+    .send('This link has already been used. （このURLはすでに使用されています）');
+}
+
 
     // Supabase Storage から署名付きURLを発行（有効 60 秒）
     const filePath = 'Rakutore_Anchor_v3.zip'; // ← Buckets「ea-secure」にある実際のファイル名
