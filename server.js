@@ -240,10 +240,13 @@ app.get('/download', async (req, res) => {
     const token = req.query.token;
 
     if (!token) {
-      return res.status(400).send('Invalid or expired token');
+      return res
+        .status(400)
+        .set('Content-Type', 'text/html; charset=utf-8')
+        .send('無効なアクセスです。');
     }
 
-    // トークンを検索
+    // トークン検索
     const { data, error } = await supabase
       .from('download_tokens')
       .select('*')
@@ -252,25 +255,31 @@ app.get('/download', async (req, res) => {
 
     if (error) {
       console.error('❌ download_tokens select error:', error.message);
-      return res.status(500).send('Server error');
+      return res.status(500).send('サーバーエラーが発生しました');
     }
 
     if (!data) {
-      return res.status(400).send('Invalid or expired token');
+      return res
+        .status(400)
+        .set('Content-Type', 'text/html; charset=utf-8')
+        .send('無効または期限切れのURLです。');
     }
 
     if (data.used_at) {
-      return res.status(410).send('This link has already been used.');
+      return res
+        .status(410)
+        .set('Content-Type', 'text/html; charset=utf-8')
+        .send('このURLはすでに使用されています。');
     }
 
-    // 確認画面を表示
-    res.send(`
+    // 確認画面
+    return res.send(`
       <html>
         <head>
           <meta charset="utf-8" />
           <title>Rakutore Anchor ダウンロード</title>
         </head>
-        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 40px auto;">
+        <body style="font-family: sans-serif; max-width: 600px; margin: 40px auto;">
           <h2>Rakutore Anchor ダウンロード</h2>
           <p>以下のボタンを押すとダウンロードが開始されます。</p>
           <p>このリンクは <strong>1回のみ</strong> 有効です。</p>
@@ -278,7 +287,7 @@ app.get('/download', async (req, res) => {
           <form method="POST" action="/download">
             <input type="hidden" name="token" value="${token}" />
             <button type="submit"
-              style="padding: 10px 20px; font-size: 16px; background:#5c4c9b; color:#fff; border:none; border-radius:6px; cursor:pointer;">
+              style="padding: 12px 28px; font-size: 16px; background:#5c4c9b; color:#fff; border:none; border-radius:6px; cursor:pointer;">
               ダウンロードする
             </button>
           </form>
@@ -287,9 +296,10 @@ app.get('/download', async (req, res) => {
     `);
   } catch (err) {
     console.error('❌ /download (GET) unexpected error:', err);
-    return res.status(500).send('Server error');
+    return res.status(500).send('サーバーエラーが発生しました');
   }
 });
+
 
 // ===================================================
 // EAダウンロード処理（POST）
@@ -298,14 +308,14 @@ app.post('/download', async (req, res) => {
   try {
     const token = req.body.token;
 
-  if (!data) {
-  return res
-    .status(404)
-    .send(' 無効または期限切れのURLです');
-}
+    if (!token) {
+      return res
+        .status(400)
+        .set('Content-Type', 'text/html; charset=utf-8')
+        .send('無効なアクセスです。');
+    }
 
-
-    // トークンを検索
+    // トークン検索
     const { data, error } = await supabase
       .from('download_tokens')
       .select('*')
@@ -314,47 +324,49 @@ app.post('/download', async (req, res) => {
 
     if (error) {
       console.error('❌ download_tokens select error:', error.message);
-      return res.status(500).send('Server error');
+      return res.status(500).send('サーバーエラーが発生しました');
     }
 
     if (!data) {
-      return res.status(400).send('Invalid or expired token');
+      return res
+        .status(400)
+        .set('Content-Type', 'text/html; charset=utf-8')
+        .send('無効または期限切れのURLです。');
     }
 
- return res
-  .status(410)
-  .set('Content-Type', 'text/html; charset=utf-8')
-  .send('このURLはすでに使用されています。');
+    // 使用済みチェック
+    if (data.used_at) {
+      return res
+        .status(410)
+        .set('Content-Type', 'text/html; charset=utf-8')
+        .send('このURLはすでに使用されています。');
+    }
 
+    // Supabase Storage から署名付きURL生成
+    const filePath = 'Rakutore_Anchor_v3.zip';
 
-    // Supabase Storage から署名付きURLを発行（有効 60 秒）
-    const filePath = 'Rakutore_Anchor_v3.zip'; // ← Buckets「ea-secure」にある実際のファイル名
     const { data: signed, error: signedError } = await supabase.storage
       .from('ea-secure')
-      .createSignedUrl(filePath, 60);
+      .createSignedUrl(filePath, 60); // 60秒有効
 
     if (signedError || !signed) {
       console.error('❌ createSignedUrl error:', signedError?.message);
-      return res.status(500).send('Failed to generate download URL.');
+      return res.status(500).send('ダウンロードURLの生成に失敗しました');
     }
 
-    // トークンを使用済みにする
+    // トークンを使用済みに更新
     const now = new Date().toISOString();
-    const { error: updateError } = await supabase
+    await supabase
       .from('download_tokens')
       .update({ used_at: now })
       .eq('id', data.id);
 
-    if (updateError) {
-      console.error('❌ download_tokens update error:', updateError.message);
-      // ここで return しない：リンク自体は有効にする
-    }
-
-    // 署名付きURLへリダイレクト → ZIP ダウンロード開始
+    // ZIP のダウンロード開始（ブラウザが保存ダイアログを出す）
     return res.redirect(signed.signedUrl);
+
   } catch (err) {
     console.error('❌ /download (POST) unexpected error:', err);
-    return res.status(500).send('Server error');
+    return res.status(500).send('サーバーエラーが発生しました');
   }
 });
 
