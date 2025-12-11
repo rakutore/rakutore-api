@@ -301,7 +301,7 @@ app.post('/download', async (req, res) => {
   if (!data) {
   return res
     .status(404)
-    .send('Invalid or expired token.   無効または期限切れのURLです');
+    .send(' 無効または期限切れのURLです');
 }
 
 
@@ -324,7 +324,7 @@ app.post('/download', async (req, res) => {
  return res
   .status(410)
   .set('Content-Type', 'text/html; charset=utf-8')
-  .send('このURLはすでに使用されています。<br>(This link has already been used.)');
+  .send('このURLはすでに使用されています。');
 
 
     // Supabase Storage から署名付きURLを発行（有効 60 秒）
