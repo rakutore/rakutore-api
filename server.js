@@ -321,12 +321,10 @@ app.post('/download', async (req, res) => {
       return res.status(400).send('Invalid or expired token');
     }
 
-    // すでに使われていたらNG（1回きり）
-if (data.used_at) {
-  return res
-    .status(410)
-    .send('This link has already been used.   このURLはすでに使用されています');
-}
+ return res
+  .status(410)
+  .set('Content-Type', 'text/html; charset=utf-8')
+  .send('This link has already been used.<br>（このURLはすでに使用されています）');
 
 
     // Supabase Storage から署名付きURLを発行（有効 60 秒）
