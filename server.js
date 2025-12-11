@@ -324,7 +324,7 @@ app.post('/download', async (req, res) => {
  return res
   .status(410)
   .set('Content-Type', 'text/html; charset=utf-8')
-  .send('This link has already been used.<br>（このURLはすでに使用されています）');
+  .send('このURLはすでに使用されています。<br>(This link has already been used.)');
 
 
     // Supabase Storage から署名付きURLを発行（有効 60 秒）
