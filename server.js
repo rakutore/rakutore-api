@@ -323,7 +323,7 @@ app.post('/download', async (req, res) => {
     }
 
     // Supabase Storage から署名付きURLを発行（有効 60 秒）
-    const filePath = 'Rakutore_Ancho_v3.zip'; // ← Buckets「ea-secure」にある実際のファイル名
+    const filePath = 'Rakutore_Anchor_v3.zip'; // ← Buckets「ea-secure」にある実際のファイル名
     const { data: signed, error: signedError } = await supabase.storage
       .from('ea-secure')
       .createSignedUrl(filePath, 60);
