@@ -298,9 +298,12 @@ app.post('/download', async (req, res) => {
   try {
     const token = req.body.token;
 
-    if (!token) {
-      return res.status(400).send('Invalid or expired token');
-    }
+  if (!data) {
+  return res
+    .status(404)
+    .send('Invalid or expired token.   無効または期限切れのURLです');
+}
+
 
     // トークンを検索
     const { data, error } = await supabase
@@ -322,7 +325,7 @@ app.post('/download', async (req, res) => {
 if (data.used_at) {
   return res
     .status(410)
-    .send('This link has already been used. （このURLはすでに使用されています）');
+    .send('This link has already been used.   このURLはすでに使用されています');
 }
 
 
