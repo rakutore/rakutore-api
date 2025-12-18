@@ -180,34 +180,52 @@ Rakutore Anchor 運営`
       }
     }
 
-    // ================================
-    // 2) invoice.paid
-    // ================================
-    else if (type === 'invoice.paid') {
-      const invoice = event.data.object;
-      const customerId = invoice.customer;
-      const email = invoice.customer_email;
+   // ================================
+// invoice.paid（継続課金）
+// ================================
+else if (type === 'invoice.paid') {
+  try {
+    const invoice = event.data.object;
 
-      const line = invoice.lines.data[0];
-      const expiresAt = line?.period?.end
-        ? new Date(line.period.end * 1000).toISOString()
-        : null;
+    const customerId = invoice.customer;
+    const email = invoice.customer_email;
 
-      const priceId = line.price.id;
-
-      const planType =
-        priceId === 'price_1SXAQUFWKU6pTKTIyPRFtc3Q' ? 'trial' : 'paid';
-
-      await upsertLicense({
-        customerId,
-        email,
-        status: 'active',
-        expiresAt,
-        planType,
-      });
-
-      console.log('↪ handled: invoice.paid');
+    const line = invoice.lines?.data?.[0];
+    if (!line) {
+      console.warn('⚠️ invoice.paid: no line items');
+      return;
     }
+
+    const expiresAt = line.period?.end
+      ? new Date(line.period.end * 1000).toISOString()
+      : null;
+
+    // priceId は「あれば参考にする」だけ
+    const priceId =
+      line.price?.id ||
+      line.plan?.id ||
+      null;
+
+    let planType = 'paid';
+    if (priceId === 'price_1SXAQUFWKU6pTKTIyPRFtc3Q') {
+      planType = 'trial';
+    }
+
+    await upsertLicense({
+      customerId,
+      email,
+      status: 'active',
+      expiresAt,
+      planType,
+    });
+
+    console.log('↪ handled: invoice.paid');
+  } catch (err) {
+    // ★ ここが超重要（Webhookでは絶対throwしない）
+    console.error('❌ invoice.paid error (ignored):', err);
+  }
+}
+
 
     // ================================
     // 3) subscription.deleted
