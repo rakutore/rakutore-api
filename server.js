@@ -1,3 +1,4 @@
+const filePath = 'Rakutore_Anchor.zip';
 // ===================================================
 // 基本設定
 // ===================================================
@@ -366,7 +367,7 @@ app.post('/download', async (req, res) => {
     }
 
     // Supabase Storage から署名付きURL生成
-    const filePath = 'Rakutore_Anchor_v4.zip';
+    const filePath = 'Rakutore_Anchor.zip';
 
     const { data: signed, error: signedError } = await supabase.storage
       .from('ea-secure')
