@@ -1,68 +1,83 @@
-# Rakutore Anchor – Backend Specification
+# Rakutore Anchor バックエンド
 
-## Overview
-Rakutore Anchor is a subscription-based MT4 EA.
-License control and file distribution are handled via Stripe Webhooks and Supabase.
+## 概要
+Rakutore Anchor（MT4 EA）の  
+**決済・ライセンス管理・ダウンロード配布**を行うバックエンドです。
+
+Stripe Webhook を受信し、  
+Supabase の `licenses` テーブルを更新することで  
+EA の利用可否を管理します。
 
 ---
 
-## Stripe Event Handling
+## システム構成（概要）
+
+- 決済：Stripe（サブスクリプション）
+- バックエンド：Node.js / Express（Railway）
+- データベース：Supabase
+- 配布：ワンタイムダウンロードURL
+
+---
+
+## Stripe イベントの役割分担（重要）
 
 ### checkout.session.completed
-**Purpose:** Initial purchase handling
+**役割：初回購入完了時の処理**
 
-Actions:
-- Create or initialize license
-- Generate one-time download URL
-- Send download email to customer
+このイベントで行うこと：
+- ライセンスの新規作成（または初期化）
+- ダウンロードURLの生成
+- 購入者へのメール送信
 
-Notes:
-- File distribution happens ONLY here
+※ ファイル配布はこのイベントのみで行う
 
 ---
 
 ### invoice.paid
-**Purpose:** Subscription continuation
+**役割：継続課金の確認**
 
-Actions:
-- Mark license as active
-- Extend expiration date if provided
+このイベントで行うこと：
+- ライセンスを `active` に更新
+- 有効期限（`expiresAt`）を延長（取得できる場合）
 
-Notes:
-- No file distribution
-- No email sending
-- Price ID may be missing (normal behavior)
-- Must never throw errors
+※ 以下は行わない  
+- ダウンロードURLの発行  
+- メール送信  
+- 厳密な price 判定  
+
+Stripe の invoice には price 情報が無い場合があるため、  
+**必ず安全に処理すること（throw しない）**
 
 ---
 
-## License (Supabase)
+## ライセンス管理（Supabase）
 
-The `licenses` table is the single source of truth.
+`licenses` テーブルが **唯一の正とする情報源**。
 
-Fields:
-- customerId
+主な項目：
+- customerId（Stripe Customer ID）
 - email
-- status (active / inactive)
+- status（active / inactive）
 - expiresAt
-- planType (trial / paid)
+- planType（trial / paid）
 
-All validation is based on this table.
-
----
-
-## Important Rules
-
-- Never throw inside Stripe Webhooks
-- Assume missing fields in Stripe payloads
-- checkout = distribution
-- invoice = continuation
+EA や API 側の判定は、  
+必ずこのテーブルの状態を基準に行う。
 
 ---
 
-## Deployment Notes
+## 重要な設計ルール
 
-- Hosted on Railway
-- Node.js v20+
-- Stripe Webhooks may retry events automatically
+- Stripe Webhook 内では例外を throw しない
+- Stripe の payload は欠損がある前提で扱う
+- 配布は checkout.session.completed のみ
+- invoice.paid は継続確認のみ
+
+---
+
+## 運用メモ
+
+- Railway 再起動時に webhook が再送されることがある
+- 同じイベントが複数回届いても問題ない設計にする
+- トラブル時はまず README を確認する
 
