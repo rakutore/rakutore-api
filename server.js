@@ -1,4 +1,3 @@
-const filePath = 'Rakutore_Anchor.zip';
 // ===================================================
 // 基本設定
 // ===================================================
@@ -13,6 +12,12 @@ const app = express();
 
 // 静的ファイル
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ================================
+// 配布EA ZIPファイル設定
+// ================================
+const EA_ZIP_PATH = 'Rakutore_Anchor_v4.zip';
+
 
 // ===================================================
 // SendGrid
@@ -366,12 +371,12 @@ app.post('/download', async (req, res) => {
         .send('このURLはすでに使用されています。');
     }
 
-    // Supabase Storage から署名付きURL生成
-    const filePath = 'Rakutore_Anchor.zip';
+// Supabase Storage から署名付きURL生成
+const filePath = EA_ZIP_PATH;
 
-    const { data: signed, error: signedError } = await supabase.storage
-      .from('ea-secure')
-      .createSignedUrl(filePath, 60); // 60秒有効
+const { data: signed, error: signedError } = await supabase.storage
+  .from('ea-secure')
+  .createSignedUrl(filePath, 60); // 60秒有効
 
     if (signedError || !signed) {
       console.error('❌ createSignedUrl error:', signedError?.message);
