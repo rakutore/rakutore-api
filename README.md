@@ -155,4 +155,9 @@ Googleフォーム「口座変更申請」の回答は、スプレッドシー�
 - テンプレ行（2行目）の書式が新規行へ反映されるため、2行目の見た目を基準に整える。
 https://docs.google.com/spreadsheets/d/1SQdYc7V9jKQXAE6tbpGcFmBokH2REi1InvJSQpEkcW8/edit?resourcekey=&gid=804934217#gid=804934217
 
-Rakutore_Anchor.zip　　Upしたファイルの名前。中身の名前　Rakutore_Anchor.v4
+Rakutore_Anchor.zip　　Upしたファイルの名前。中身の名前　Rakutore_Anchor.v4これだとうまくいかないのでZIPを新しく変えるたびに
+ZIP名変更する。
+// ================================
+// 配布EA ZIPファイル設定
+// ================================
+const EA_ZIP_PATH = 'Rakutore_Anchor_v4.zip';　　　ここを変える。
