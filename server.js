@@ -262,6 +262,30 @@ app.use(express.text({ type: 'text/*' }));
 app.use(express.json());
 
 // ===================================================
+// PAY.JP Webhook（テスト）
+// ===================================================
+app.post('/payjp/webhook', express.json(), (req, res) => {
+  try {
+    const token = req.headers['x-payjp-webhook-token'];
+    const expected = process.env.PAYJP_WEBHOOK_SECRET;
+
+    if (!token || token !== expected) {
+      console.error("❌ PAYJP webhook token mismatch");
+      return res.status(401).send("invalid token");
+    }
+
+    console.log("⚡ PAYJP Webhook received");
+    console.log(JSON.stringify(req.body, null, 2));
+
+    // 今は処理しない（安全）
+    return res.status(200).json({ received: true });
+  } catch (err) {
+    console.error("❌ PAYJP Webhook error:", err);
+    return res.status(500).send("error");
+  }
+});
+
+// ===================================================
 // EAダウンロード確認画面（GET）
 // ===================================================
 app.get('/download', async (req, res) => {
