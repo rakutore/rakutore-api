@@ -264,23 +264,36 @@ app.use(express.json());
 // ===================================================
 // PAY.JP Webhook（テスト）
 // ===================================================
-app.post('/payjp/webhook', express.json(), (req, res) => {
+app.post('/payjp/webhook', express.json(), async (req, res) => {
   try {
     const token = req.headers['x-payjp-webhook-token'];
-    const expected = process.env.PAYJP_WEBHOOK_SECRET;
-
-    if (!token || token !== expected) {
-      console.error("❌ PAYJP webhook token mismatch");
+    if (token !== process.env.PAYJP_WEBHOOK_SECRET) {
       return res.status(401).send("invalid token");
     }
 
-    console.log("⚡ PAYJP Webhook received");
-    console.log(JSON.stringify(req.body, null, 2));
+    const event = req.body;
+    console.log("⚡ PAYJP Webhook received:", event.type);
 
-    // 今は処理しない（安全）
-    return res.status(200).json({ received: true });
+    // ✅ 支払い成功のときだけ
+    if (event.type === "charge.succeeded") {
+      const charge = event.data;
+      const email = charge.card?.email;
+
+      if (email) {
+        await sendEmail(
+          email,
+          "【Rakutore】ご購入ありがとうございます",
+          `ご購入ありがとうございます。\n\n現在はテスト環境です。\n\nRakutore`
+        );
+        console.log("📧 Purchase mail sent:", email);
+      } else {
+        console.log("⚠️ email not found in charge");
+      }
+    }
+
+    return res.json({ received: true });
   } catch (err) {
-    console.error("❌ PAYJP Webhook error:", err);
+    console.error("❌ PAYJP webhook error:", err);
     return res.status(500).send("error");
   }
 });
