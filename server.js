@@ -570,6 +570,45 @@ app.post('/license/validate', async (req, res) => {
     return res.json({ ok: false, reason: 'server_error' });
   }
 });
+// ===================================================
+// 管理用：ダウンロード再送API
+// ===================================================
+app.post('/admin/resend-download', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'email_required' });
+    }
+
+    // 新しいトークンを発行（＝前のは使わない）
+    const token = await issueDownloadToken(email);
+    if (!token) {
+      return res.status(500).json({ error: 'token_failed' });
+    }
+
+    const downloadUrl = `https://api.rakutore.jp/download?token=${token}`;
+
+    await sendEmail(
+      email,
+      '【Rakutore Anchor】EAダウンロード再送のご案内',
+      `ご連絡ありがとうございます。
+
+以下のURLからEAを再ダウンロードできます。
+（※ 1回のみ有効です）
+
+${downloadUrl}
+
+Rakutore Anchor 運営`
+    );
+
+    console.log('📩 再送ダウンロードURL:', downloadUrl);
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ resend error:', err);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
 
 // ===================================================
 // 動作チェック
