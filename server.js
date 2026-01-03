@@ -425,9 +425,12 @@ app.post('/download', async (req, res) => {
 // Supabase Storage から署名付きURL生成
 const filePath = EA_ZIP_PATH;
 
+const SIGNED_URL_TTL = 60 * 60 * 24 * 30; // 30日
+
 const { data: signed, error: signedError } = await supabase.storage
   .from('ea-secure')
-  .createSignedUrl(filePath, 60); // 60秒有効
+  .createSignedUrl(filePath, SIGNED_URL_TTL);
+
 
     if (signedError || !signed) {
       console.error('❌ createSignedUrl error:', signedError?.message);
