@@ -275,28 +275,37 @@ app.post('/payjp/webhook', express.json(), async (req, res) => {
     console.log("⚡ PAYJP Webhook received:", event.type);
 
     // ✅ 支払い成功のときだけ
-    if (event.type === "charge.succeeded") {
-      const charge = event.data;
-      const email = charge.card?.email;
+   if (event.type === "charge.succeeded") {
+  const charge = event.data;
+  const email = charge.card?.email;
 
-      if (email) {
-        await sendEmail(
-          email,
-          "【Rakutore】ご購入ありがとうございます",
-          `ご購入ありがとうございます。\n\n現在はテスト環境です。\n\nRakutore`
-        );
-        console.log("📧 Purchase mail sent:", email);
-      } else {
-        console.log("⚠️ email not found in charge");
-      }
-    }
-
+  if (!email) {
+    console.log("⚠️ email not found");
     return res.json({ received: true });
-  } catch (err) {
-    console.error("❌ PAYJP webhook error:", err);
-    return res.status(500).send("error");
   }
-});
+
+  // 🔑 ダウンロードトークン発行
+  const token = await issueDownloadToken(email);
+
+  if (token) {
+    const downloadUrl = `https://api.rakutore.jp/download?token=${token}`;
+
+    await sendEmail(
+      email,
+      '【Rakutore Anchor】EAダウンロードのご案内',
+      `ご購入ありがとうございます。
+
+以下のURLからEAをダウンロードできます。
+（※ 1回のみ有効です）
+
+${downloadUrl}
+
+再ダウンロードが必要な場合は support@rakutore.jp までご連絡ください。`
+    );
+
+    console.log("📩 ダウンロードURL送信:", downloadUrl);
+  }
+}
 
 // ===================================================
 // EAダウンロード確認画面（GET）
