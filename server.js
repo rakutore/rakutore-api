@@ -262,7 +262,7 @@ app.use(express.text({ type: 'text/*' }));
 app.use(express.json());
 
 // ===================================================
-// PAY.JP Webhook（テスト）
+// PAY.JP Webhook
 // ===================================================
 app.post('/payjp/webhook', express.json(), async (req, res) => {
   try {
@@ -274,38 +274,43 @@ app.post('/payjp/webhook', express.json(), async (req, res) => {
     const event = req.body;
     console.log("⚡ PAYJP Webhook received:", event.type);
 
-    // ✅ 支払い成功のときだけ
-   if (event.type === "charge.succeeded") {
-  const charge = event.data;
-  const email = charge.card?.email;
+    if (event.type === "charge.succeeded") {
+      const charge = event.data;
+      const email = charge.card?.email;
 
-  if (!email) {
-    console.log("⚠️ email not found");
-    return res.json({ received: true });
-  }
+      if (!email) {
+        console.log("⚠️ email not found");
+        return res.json({ received: true });
+      }
 
-  // 🔑 ダウンロードトークン発行
-  const token = await issueDownloadToken(email);
+      const downloadToken = await issueDownloadToken(email);
 
-  if (token) {
-    const downloadUrl = `https://api.rakutore.jp/download?token=${token}`;
+      if (downloadToken) {
+        const downloadUrl = `https://api.rakutore.jp/download?token=${downloadToken}`;
 
-    await sendEmail(
-      email,
-      '【Rakutore Anchor】EAダウンロードのご案内',
-      `ご購入ありがとうございます。
+        await sendEmail(
+          email,
+          '【Rakutore Anchor】EAダウンロードのご案内',
+          `ご購入ありがとうございます。
 
-以下のURLからEAをダウンロードできます。
-（※ 1回のみ有効です）
+以下のURLからEAをダウンロードできます（1回のみ有効です）。
 
 ${downloadUrl}
 
 再ダウンロードが必要な場合は support@rakutore.jp までご連絡ください。`
-    );
+        );
 
-    console.log("📩 ダウンロードURL送信:", downloadUrl);
+        console.log("📩 ダウンロードURL送信:", downloadUrl);
+      }
+    }
+
+    return res.json({ received: true });
+
+  } catch (err) {
+    console.error("❌ PAYJP webhook error:", err);
+    return res.status(500).json({ error: "webhook_error" });
   }
-}
+});
 
 // ===================================================
 // EAダウンロード確認画面（GET）
