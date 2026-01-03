@@ -574,6 +574,8 @@ app.get('/healthz', (req, res) => {
   res.send('ok');
 });
 
+// ❌ 本番では削除する
+/*
 app.get('/test-email', async (req, res) => {
   try {
     await sendEmail(
@@ -587,6 +589,7 @@ app.get('/test-email', async (req, res) => {
     res.status(500).send('テストメール送信エラー');
   }
 });
+*/
 
 // ===================================================
 // 起動
