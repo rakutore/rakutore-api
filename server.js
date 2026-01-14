@@ -18,7 +18,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ================================
 const EA_ZIP_PATH = 'Rakutore_Anchor_v4.zip';
 
-
 // ===================================================
 // SendGrid
 // ===================================================
@@ -58,7 +57,6 @@ const supabase = createClient(
 // ===================================================
 async function issueDownloadToken(email) {
   try {
-    // ランダムな 32文字のトークン
     const token = crypto.randomBytes(16).toString('hex');
 
     const { error } = await supabase
@@ -132,13 +130,11 @@ app.post(
         s.customer_email ||
         null;
 
-      // --- 価格ID取得 ---
       const priceId =
         s?.display_items?.[0]?.price?.id ||
         s?.line_items?.data?.[0]?.price?.id ||
         null;
 
-      // --- プラン判定 ---
       let planType = 'paid';
       if (priceId === 'price_1SXAQUFWKU6pTKTIyPRFtc3Q') {
         planType = 'trial';
@@ -154,7 +150,6 @@ app.post(
 
       console.log('↪ handled: checkout.session.completed');
 
-      // ★ ここから：ダウンロードトークン発行＆メール送信
       if (email) {
         const token = await issueDownloadToken(email);
 
@@ -177,7 +172,6 @@ ${downloadUrl}
 ・EAの利用可否は、ダウンロード回数ではなくライセンス認証によって管理されています
 ・再ダウンロードが必要な場合は support@rakutore.jp までご連絡ください。
 
-
 Rakutore Anchor 運営`
           );
 
@@ -186,55 +180,49 @@ Rakutore Anchor 運営`
       }
     }
 
-   // ================================
-// invoice.paid（継続課金）
-// ================================
-else if (type === 'invoice.paid') {
-  try {
-    const invoice = event.data.object;
+    // ================================
+    // invoice.paid（継続課金）
+    // ================================
+    else if (type === 'invoice.paid') {
+      try {
+        const invoice = event.data.object;
 
-    const customerId = invoice.customer;
-    const email = invoice.customer_email;
+        const customerId = invoice.customer;
+        const email = invoice.customer_email;
 
-    const line = invoice.lines?.data?.[0];
-    if (!line) {
-      console.warn('⚠️ invoice.paid: no line items');
-      return;
+        const line = invoice.lines?.data?.[0];
+        if (!line) {
+          console.warn('⚠️ invoice.paid: no line items');
+          return res.json({ received: true });
+        }
+
+        const expiresAt = line.period?.end
+          ? new Date(line.period.end * 1000).toISOString()
+          : null;
+
+        const priceId = line.price?.id || line.plan?.id || null;
+
+        let planType = 'paid';
+        if (priceId === 'price_1SXAQUFWKU6pTKTIyPRFtc3Q') {
+          planType = 'trial';
+        }
+
+        await upsertLicense({
+          customerId,
+          email,
+          status: 'active',
+          expiresAt,
+          planType,
+        });
+
+        console.log('↪ handled: invoice.paid');
+      } catch (err) {
+        console.error('❌ invoice.paid error (ignored):', err);
+      }
     }
-
-    const expiresAt = line.period?.end
-      ? new Date(line.period.end * 1000).toISOString()
-      : null;
-
-    // priceId は「あれば参考にする」だけ
-    const priceId =
-      line.price?.id ||
-      line.plan?.id ||
-      null;
-
-    let planType = 'paid';
-    if (priceId === 'price_1SXAQUFWKU6pTKTIyPRFtc3Q') {
-      planType = 'trial';
-    }
-
-    await upsertLicense({
-      customerId,
-      email,
-      status: 'active',
-      expiresAt,
-      planType,
-    });
-
-    console.log('↪ handled: invoice.paid');
-  } catch (err) {
-    // ★ ここが超重要（Webhookでは絶対throwしない）
-    console.error('❌ invoice.paid error (ignored):', err);
-  }
-}
-
 
     // ================================
-    // 3) subscription.deleted
+    // subscription.deleted
     // ================================
     else if (type === 'customer.subscription.deleted') {
       const sub = event.data.object;
@@ -255,62 +243,11 @@ else if (type === 'invoice.paid') {
 );
 
 // ===================================================
-// Webhook 以外の JSON パース
+// Webhook 以外のパース
 // ===================================================
 app.use(express.urlencoded({ extended: false }));
 app.use(express.text({ type: 'text/*' }));
 app.use(express.json());
-
-// ===================================================
-// PAY.JP Webhook
-// ===================================================
-app.post('/payjp/webhook', express.json(), async (req, res) => {
-  try {
-    const token = req.headers['x-payjp-webhook-token'];
-    if (token !== process.env.PAYJP_WEBHOOK_SECRET) {
-      return res.status(401).send("invalid token");
-    }
-
-    const event = req.body;
-    console.log("⚡ PAYJP Webhook received:", event.type);
-
-    if (event.type === "charge.succeeded") {
-      const charge = event.data;
-      const email = charge.card?.email;
-
-      if (!email) {
-        console.log("⚠️ email not found");
-        return res.json({ received: true });
-      }
-
-      const downloadToken = await issueDownloadToken(email);
-
-      if (downloadToken) {
-        const downloadUrl = `https://api.rakutore.jp/download?token=${downloadToken}`;
-
-        await sendEmail(
-          email,
-          '【Rakutore Anchor】EAダウンロードのご案内',
-          `ご購入ありがとうございます。
-
-以下のURLからEAをダウンロードできます（1回のみ有効です）。
-
-${downloadUrl}
-
-再ダウンロードが必要な場合は support@rakutore.jp までご連絡ください。`
-        );
-
-        console.log("📩 ダウンロードURL送信:", downloadUrl);
-      }
-    }
-
-    return res.json({ received: true });
-
-  } catch (err) {
-    console.error("❌ PAYJP webhook error:", err);
-    return res.status(500).json({ error: "webhook_error" });
-  }
-});
 
 // ===================================================
 // EAダウンロード確認画面（GET）
@@ -326,7 +263,6 @@ app.get('/download', async (req, res) => {
         .send('無効なアクセスです。');
     }
 
-    // トークン検索
     const { data, error } = await supabase
       .from('download_tokens')
       .select('*')
@@ -352,7 +288,6 @@ app.get('/download', async (req, res) => {
         .send('このURLはすでに使用されています。');
     }
 
-    // 確認画面
     return res.send(`
       <html>
         <head>
@@ -380,7 +315,6 @@ app.get('/download', async (req, res) => {
   }
 });
 
-
 // ===================================================
 // EAダウンロード処理（POST）
 // ===================================================
@@ -395,7 +329,6 @@ app.post('/download', async (req, res) => {
         .send('無効なアクセスです。');
     }
 
-    // トークン検索
     const { data, error } = await supabase
       .from('download_tokens')
       .select('*')
@@ -414,7 +347,6 @@ app.post('/download', async (req, res) => {
         .send('無効または期限切れのURLです。');
     }
 
-    // 使用済みチェック
     if (data.used_at) {
       return res
         .status(410)
@@ -422,31 +354,25 @@ app.post('/download', async (req, res) => {
         .send('このURLはすでに使用されています。');
     }
 
-// Supabase Storage から署名付きURL生成
-const filePath = EA_ZIP_PATH;
+    const filePath = EA_ZIP_PATH;
+    const SIGNED_URL_TTL = 60 * 60 * 24 * 30; // 30日
 
-const SIGNED_URL_TTL = 60 * 60 * 24 * 30; // 30日
-
-const { data: signed, error: signedError } = await supabase.storage
-  .from('ea-secure')
-  .createSignedUrl(filePath, SIGNED_URL_TTL);
-
+    const { data: signed, error: signedError } = await supabase.storage
+      .from('ea-secure')
+      .createSignedUrl(filePath, SIGNED_URL_TTL);
 
     if (signedError || !signed) {
       console.error('❌ createSignedUrl error:', signedError?.message);
       return res.status(500).send('ダウンロードURLの生成に失敗しました');
     }
 
-    // トークンを使用済みに更新
     const now = new Date().toISOString();
     await supabase
       .from('download_tokens')
       .update({ used_at: now })
       .eq('id', data.id);
 
-    // ZIP のダウンロード開始（ブラウザが保存ダイアログを出す）
     return res.redirect(signed.signedUrl);
-
   } catch (err) {
     console.error('❌ /download (POST) unexpected error:', err);
     return res.status(500).send('サーバーエラーが発生しました');
@@ -454,7 +380,11 @@ const { data: signed, error: signedError } = await supabase.storage
 });
 
 // ===================================================
-// EA ライセンス認証 API
+// EA ライセンス認証 API（確定仕様版）
+// - trial：デモのみ、バインドしない（メールは保存されている想定）
+// - paid ：課金中ならデモでも動作OK（バインドしない）
+//          リアルで初回起動した時だけバインド
+//          以後は同じ口座ならデモ/リアルどちらもOK
 // ===================================================
 app.post('/license/validate', async (req, res) => {
   try {
@@ -487,6 +417,11 @@ app.post('/license/validate', async (req, res) => {
       .limit(1)
       .maybeSingle();
 
+    if (error) {
+      console.error('❌ licenses select error:', error.message);
+      return res.json({ ok: false, reason: 'server_error' });
+    }
+
     if (!data) return res.json({ ok: false, reason: 'not_found' });
 
     const now = new Date();
@@ -498,78 +433,102 @@ app.post('/license/validate', async (req, res) => {
     if (expiresAt && expiresAt < now)
       return res.json({ ok: false, reason: 'expired' });
 
-    // トライアル → デモのみ
-    if (data.plan_type === 'trial') {
-      const s =
-        (req.body.server ||
-          raw.match(/server=([^&]+)/)?.[1] ||
-          ''
-        ).toLowerCase();
+    const serverLower = String(server).toLowerCase();
+    const isDemo = serverLower.includes('demo');
 
-      if (!s.includes('demo')) {
+    // =============================
+    // trial：デモのみ（バインドしない）
+    // =============================
+    if (data.plan_type === 'trial') {
+      if (!isDemo) {
         return res.json({ ok: false, reason: 'trial_demo_only' });
       }
+
+      await supabase
+        .from('licenses')
+        .update({ last_check_at: now.toISOString() })
+        .eq('id', data.id);
+
+      return res.json({
+        ok: true,
+        reason: 'trial_demo_ok',
+        bound_account: data.bound_account || null,
+        expires_at: expiresAt,
+      });
     }
 
     // =============================
-    // 初回バインド
+    // paid：デモでもOK（バインドしない）
     // =============================
-    if (!data.bound_account) {
+    if (data.plan_type === 'paid') {
+      // まだバインドしていない＆デモ → 動作確認OK、ただしバインドしない
+      if (!data.bound_account && isDemo) {
+        await supabase
+          .from('licenses')
+          .update({ last_check_at: now.toISOString() })
+          .eq('id', data.id);
+
+        return res.json({
+          ok: true,
+          reason: 'paid_demo_ok_not_bound',
+          bound_account: null,
+          expires_at: expiresAt,
+        });
+      }
+
+      // まだバインドしていない＆リアル → ここで初回バインド
+      if (!data.bound_account && !isDemo) {
+        await supabase
+          .from('licenses')
+          .update({
+            bound_account: account,
+            bound_at: now.toISOString(),
+            last_check_at: now.toISOString(),
+            last_active_at: now.toISOString(),
+          })
+          .eq('id', data.id);
+
+        return res.json({
+          ok: true,
+          reason: 'active_bound',
+          bound_account: account,
+          expires_at: expiresAt,
+        });
+      }
+
+      // すでにバインド済み → 口座一致ならOK（デモ/リアルどちらでも）
+      if (Number(data.bound_account) !== account) {
+        return res.json({
+          ok: false,
+          reason: 'account_mismatch',
+          bound_account: data.bound_account,
+        });
+      }
+
       await supabase
         .from('licenses')
         .update({
-          bound_account: account,
-          bound_at: now.toISOString(),
           last_check_at: now.toISOString(),
-          last_active_at:
-            data.plan_type === 'paid' ? now.toISOString() : null,
+          last_active_at: now.toISOString(),
         })
         .eq('id', data.id);
 
       return res.json({
         ok: true,
-        reason: 'active_bound',
-        bound_account: account,
+        reason: 'active',
+        bound_account: data.bound_account,
         expires_at: expiresAt,
       });
     }
 
-    // 別口座 → NG
-    if (Number(data.bound_account) !== account) {
-      return res.json({
-        ok: false,
-        reason: 'account_mismatch',
-        bound_account: data.bound_account,
-      });
-    }
-
-    // =============================
-    // 正常（継続利用）
-    // =============================
-    const updateData = {
-      last_check_at: now.toISOString(),
-    };
-
-    if (data.plan_type === 'paid') {
-      updateData.last_active_at = now.toISOString();
-    }
-
-    await supabase
-      .from('licenses')
-      .update(updateData)
-      .eq('id', data.id);
-
-    return res.json({
-      ok: true,
-      reason: 'active',
-      bound_account: data.bound_account,
-      expires_at: expiresAt,
-    });
+    // plan_type不明
+    return res.json({ ok: false, reason: 'plan_type_invalid' });
   } catch (err) {
     console.error('❌ Unexpected Server Error:', err);
     return res.json({ ok: false, reason: 'server_error' });
   }
 });
+
 // ===================================================
 // 管理用：ダウンロード再送API
 // ===================================================
@@ -580,7 +539,6 @@ app.post('/admin/resend-download', async (req, res) => {
       return res.status(400).json({ error: 'email_required' });
     }
 
-    // 新しいトークンを発行（＝前のは使わない）
     const token = await issueDownloadToken(email);
     if (!token) {
       return res.status(500).json({ error: 'token_failed' });
@@ -613,30 +571,8 @@ Rakutore Anchor 運営`
 // ===================================================
 // 動作チェック
 // ===================================================
-app.get('/', (req, res) => {
-  res.send('API running');
-});
-
-app.get('/healthz', (req, res) => {
-  res.send('ok');
-});
-
-// ❌ 本番では削除する
-/*
-app.get('/test-email', async (req, res) => {
-  try {
-    await sendEmail(
-      'happytomo365@gmail.com',
-      'SendGrid テストメール',
-      'これは SendGrid が正常に動作していることを確認するテストメールです。'
-    );
-    res.send('テストメール送信完了！');
-  } catch (e) {
-    console.error(e);
-    res.status(500).send('テストメール送信エラー');
-  }
-});
-*/
+app.get('/', (req, res) => res.send('API running'));
+app.get('/healthz', (req, res) => res.send('ok'));
 
 // ===================================================
 // 起動
