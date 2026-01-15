@@ -500,13 +500,18 @@ app.post('/license/validate', async (req, res) => {
 
 
       // すでにバインド済み → 口座一致ならOK（デモ/リアルどちらでも）
-      if (Number(data.bound_account) !== account) {
-        return res.json({
-          ok: false,
-          reason: 'account_mismatch',
-          bound_account: data.bound_account,
-        });
-      }
+     if (
+  Number(data.bound_account) !== account ||
+  data.bound_server !== server
+) {
+  return res.json({
+    ok: false,
+    reason: 'account_or_server_mismatch',
+    bound_account: data.bound_account,
+    bound_server: data.bound_server,
+  });
+}
+
 
       await supabase
         .from('licenses')
