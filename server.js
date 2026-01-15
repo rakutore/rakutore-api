@@ -392,11 +392,20 @@ app.post('/download', async (req, res) => {
 app.post('/license/validate', async (req, res) => {
   try {
     // =============================
-    // 入力取得
-    // =============================
-    const email   = req.body?.email?.replace?.(/\x00/g, '') || null;
-    const accountRaw = req.body?.account?.replace?.(/\x00/g, '') || null;
-    const server  = req.body?.server?.replace?.(/\x00/g, '') || null;
+// 入力取得（正規化）
+// =============================
+const emailRaw =
+  (req.body?.email?.replace?.(/\x00/g, '') ?? '').trim();
+const serverRaw =
+  (req.body?.server?.replace?.(/\x00/g, '') ?? '').trim();
+const accountRaw =
+  (req.body?.account?.replace?.(/\x00/g, '') ?? '').trim();
+
+const email = emailRaw ? emailRaw.toLowerCase() : null;
+
+// server は「表示用」と「比較用」を分ける（比較用は小文字）
+const server = serverRaw || null;
+const serverNorm = serverRaw ? serverRaw.toLowerCase() : null;
 
     if (!email)   return res.json({ ok: false, reason: 'email_required' });
     if (!accountRaw) return res.json({ ok: false, reason: 'account_required' });
