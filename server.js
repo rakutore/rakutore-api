@@ -566,9 +566,10 @@ if (
       await supabase
         .from('licenses')
         .update({
-          bound_account: account,
-          bound_server: server,
-          bound_broker: server.split('-')[0],
+  bound_account: account,
+  bound_server: serverNorm, // 正規化した値を保存
+  bound_broker: serverRaw.split('-')[0].trim(),
+
           bound_at: now.toISOString(),
           last_check_at: now.toISOString(),
           last_active_at: now.toISOString(),
