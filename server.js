@@ -414,8 +414,9 @@ app.post('/license/validate', async (req, res) => {
         'id, status, expires_at, bound_account, bound_server, bound_broker, plan_type'
       )
       .eq('email', email)
-      .order('created_at', { ascending: false })
-      .limit(1)
+.not('plan_type', 'is', null)
+.order('created_at', { ascending: false })
+.limit(1)
       .maybeSingle();
 
     if (error) {
