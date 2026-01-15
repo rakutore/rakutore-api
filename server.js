@@ -490,9 +490,10 @@ const serverNorm = serverRaw ? serverRaw.toLowerCase() : null;
           // 後付け保存
           await supabase
             .from('licenses')
-            .update({
-              bound_server: server,
-              bound_broker: server.split('-')[0],
+           .update({
+  bound_server: serverNorm, // 正規化した値を保存
+  bound_broker: serverRaw.split('-')[0].trim(),
+  
               last_check_at: now.toISOString(),
               last_active_at: now.toISOString(),
             })
