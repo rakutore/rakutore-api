@@ -477,24 +477,27 @@ app.post('/license/validate', async (req, res) => {
       }
 
       // まだバインドしていない＆リアル → ここで初回バインド
-      if (!data.bound_account && !isDemo) {
-        await supabase
-          .from('licenses')
-          .update({
-            bound_account: account,
-            bound_at: now.toISOString(),
-            last_check_at: now.toISOString(),
-            last_active_at: now.toISOString(),
-          })
-          .eq('id', data.id);
+   if (!data.bound_account && !isDemo) {
+  await supabase
+    .from('licenses')
+    .update({
+      bound_account: account,
+      bound_server: server,
+      bound_broker: server.split('-')[0], // 雑でOK
+      bound_at: now.toISOString(),
+      last_check_at: now.toISOString(),
+      last_active_at: now.toISOString(),
+    })
+    .eq('id', data.id);
 
-        return res.json({
-          ok: true,
-          reason: 'active_bound',
-          bound_account: account,
-          expires_at: expiresAt,
-        });
-      }
+  return res.json({
+    ok: true,
+    reason: 'active_bound',
+    bound_account: account,
+    bound_server: server,
+  });
+}
+
 
       // すでにバインド済み → 口座一致ならOK（デモ/リアルどちらでも）
       if (Number(data.bound_account) !== account) {
