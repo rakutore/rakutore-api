@@ -380,52 +380,53 @@ app.post('/download', async (req, res) => {
 });
 
 // ===================================================
-// EA ライセンス認証 API（確定仕様版）
-// - trial：デモのみ、バインドしない（メールは保存されている想定）
-// - paid ：課金中ならデモでも動作OK（バインドしない）
-//          リアルで初回起動した時だけバインド
-//          以後は同じ口座ならデモ/リアルどちらもOK
-// ===================================================
-// ===================================================
-// EA ライセンス認証 API（完成・安定版）
+// EA ライセンス認証 API（安定・実運用向け）
+// - trial：デモのみ、バインドしない
+// - paid ：デモOK（バインドしない）
+//          リアルで初回だけバインド（口座 + broker + 環境）
+//          以後は同じ口座なら server表記ゆれ（Live01/Live02等）でもOK
 // ===================================================
 app.post('/license/validate', async (req, res) => {
   try {
     // =============================
-// 入力取得（正規化）
-// =============================
-const emailRaw =
-  (req.body?.email?.replace?.(/\x00/g, '') ?? '').trim();
-const serverRaw =
-  (req.body?.server?.replace?.(/\x00/g, '') ?? '').trim();
-const accountRaw =
-  (req.body?.account?.replace?.(/\x00/g, '') ?? '').trim();
+    // 入力取得（正規化）
+    // =============================
+    const emailRaw =
+      (req.body?.email?.replace?.(/\x00/g, '') ?? '').trim();
+    const accountRaw =
+      (req.body?.account?.replace?.(/\x00/g, '') ?? '').trim();
+    const serverRaw =
+      (req.body?.server?.replace?.(/\x00/g, '') ?? '').trim();
 
-const email = emailRaw ? emailRaw.toLowerCase() : null;
+    const email = emailRaw ? emailRaw.toLowerCase() : null;
+    const serverNorm = serverRaw ? serverRaw.toLowerCase() : null;
 
-// server は「表示用」と「比較用」を分ける（比較用は小文字）
-const server = serverRaw || null;
-const serverNorm = serverRaw ? serverRaw.toLowerCase() : null;
-
-    if (!email)   return res.json({ ok: false, reason: 'email_required' });
+    if (!email) return res.json({ ok: false, reason: 'email_required' });
     if (!accountRaw) return res.json({ ok: false, reason: 'account_required' });
-    if (!server)  return res.json({ ok: false, reason: 'server_required' });
+    if (!serverNorm) return res.json({ ok: false, reason: 'server_required' });
 
+    // 口座番号（現状踏襲：数値化）
     const account = Number(String(accountRaw).replace(/\D/g, ''));
     if (!account) return res.json({ ok: false, reason: 'account_invalid' });
 
+    // broker 推定（serverの "BROKER-XXX" を想定）
+    const broker = (serverRaw.split('-')[0] || '').trim().toLowerCase() || null;
+
+    // demo 判定（ゆるく判定）
+    const isDemo = serverNorm.includes('demo');
+
     // =============================
-    // DB取得（※ bound_server 必須）
+    // DB取得
+    // - email は lower で揃える前提。揃ってない場合は webhook/発行側も正規化推奨
+    // - 最新を取る（運用ルールがあるならここは調整）
     // =============================
     const { data, error } = await supabase
       .from('licenses')
-      .select(
-        'id, status, expires_at, bound_account, bound_server, bound_broker, plan_type'
-      )
+      .select('id, status, expires_at, bound_account, bound_server, bound_broker, plan_type')
       .eq('email', email)
-.not('plan_type', 'is', null)
-.order('created_at', { ascending: false })
-.limit(1)
+      .not('plan_type', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error) {
@@ -443,90 +444,109 @@ const serverNorm = serverRaw ? serverRaw.toLowerCase() : null;
     if (expiresAt && expiresAt < now)
       return res.json({ ok: false, reason: 'expired' });
 
-    const isDemo = String(server).toLowerCase().includes('demo');
+    // DB側正規化
+    const boundAccount = data.bound_account ? Number(data.bound_account) : null;
+    const boundServerNorm =
+      (data.bound_server ?? '').toString().trim().toLowerCase();
+    const boundBrokerNorm =
+      (data.bound_broker ?? '').toString().trim().toLowerCase();
 
     // =============================
     // trial：デモのみ・非バインド
     // =============================
     if (data.plan_type === 'trial') {
-      if (!isDemo) {
-        return res.json({ ok: false, reason: 'trial_demo_only' });
-      }
+      if (!isDemo) return res.json({ ok: false, reason: 'trial_demo_only' });
 
-      await supabase
+      const { error: uerr } = await supabase
         .from('licenses')
         .update({ last_check_at: now.toISOString() })
         .eq('id', data.id);
+
+      if (uerr) {
+        console.error('❌ licenses update error:', uerr.message);
+        return res.json({ ok: false, reason: 'server_error' });
+      }
 
       return res.json({
         ok: true,
         reason: 'trial_demo_ok',
         bound_account: null,
-        expires_at: expiresAt,
+        bound_broker: null,
+        expires_at: expiresAt ? expiresAt.toISOString() : null,
       });
     }
 
     // =============================
-    // paid：デモOK / リアルでバインド
+    // paid：デモOK / リアルで初回バインド
     // =============================
     if (data.plan_type === 'paid') {
 
       // -----------------------------
       // ① すでにバインド済み
       // -----------------------------
-      if (data.bound_account) {
+      if (boundAccount) {
 
-        // ★ 旧データ救済（server 未保存）
-        if (!data.bound_server || String(data.bound_server).trim() === '') {
+        // ★ 旧データ救済（broker/server 未保存など）
+        // 口座が違うなら即NG
+        if (boundAccount !== account) {
+          return res.json({
+            ok: false,
+            reason: 'account_mismatch',
+            bound_account: data.bound_account,
+          });
+        }
 
-          if (Number(data.bound_account) !== account) {
+        // broker が保存されているなら broker を優先チェック（Live01/Live02等の表記ゆれを許容）
+        if (boundBrokerNorm) {
+          if (!broker || boundBrokerNorm !== broker) {
             return res.json({
               ok: false,
-              reason: 'account_mismatch_legacy',
+              reason: 'broker_mismatch',
+              bound_broker: data.bound_broker,
+              got_broker: broker,
+            });
+          }
+        } else {
+          // broker が無い古いデータの場合は server 正規化で比較（できる範囲で）
+          // ※ bound_server が空なら救済して保存
+          if (!boundServerNorm) {
+            const { error: uerr } = await supabase
+              .from('licenses')
+              .update({
+                bound_server: serverNorm,
+                bound_broker: broker,
+                last_check_at: now.toISOString(),
+                last_active_at: now.toISOString(),
+              })
+              .eq('id', data.id);
+
+            if (uerr) {
+              console.error('❌ licenses legacy update error:', uerr.message);
+              return res.json({ ok: false, reason: 'server_error' });
+            }
+
+            return res.json({
+              ok: true,
+              reason: 'legacy_bound_updated',
               bound_account: data.bound_account,
+              bound_broker: broker,
+              expires_at: expiresAt ? expiresAt.toISOString() : null,
             });
           }
 
-          // 後付け保存
-          await supabase
-            .from('licenses')
-           .update({
-  bound_server: serverNorm, // 正規化した値を保存
-  bound_broker: serverRaw.split('-')[0].trim(),
-  
-              last_check_at: now.toISOString(),
-              last_active_at: now.toISOString(),
-            })
-            .eq('id', data.id);
-
-          return res.json({
-            ok: true,
-            reason: 'legacy_bound_updated',
-            bound_account: data.bound_account,
-            bound_server: server,
-            expires_at: expiresAt,
-          });
+          // server（正規化）で比較
+          if (boundServerNorm !== serverNorm) {
+            return res.json({
+              ok: false,
+              reason: 'server_mismatch_legacy',
+              bound_server: data.bound_server,
+              got_server: serverRaw,
+            });
+          }
         }
 
-        // ★ 新方式：口座＋サーバー完全一致
-       const boundServerNorm =
-  (data.bound_server ?? '').toString().trim().toLowerCase();
-
-if (
-  Number(data.bound_account) !== account ||
-  boundServerNorm !== (serverNorm ?? '')
-) {
-
-          return res.json({
-            ok: false,
-            reason: 'account_or_server_mismatch',
-            bound_account: data.bound_account,
-            bound_server: data.bound_server,
-          });
-        }
-
-        // 一致 → OK
-        await supabase
+        // 一致 → OK（チェック更新）
+        const { error: uerr } = await supabase
           .from('licenses')
           .update({
             last_check_at: now.toISOString(),
@@ -534,12 +554,17 @@ if (
           })
           .eq('id', data.id);
 
+        if (uerr) {
+          console.error('❌ licenses update error:', uerr.message);
+          return res.json({ ok: false, reason: 'server_error' });
+        }
+
         return res.json({
           ok: true,
           reason: 'active',
           bound_account: data.bound_account,
-          bound_server: data.bound_server,
-          expires_at: expiresAt,
+          bound_broker: data.bound_broker,
+          expires_at: expiresAt ? expiresAt.toISOString() : null,
         });
       }
 
@@ -549,39 +574,49 @@ if (
 
       // デモ → OK（バインドしない）
       if (isDemo) {
-        await supabase
+        const { error: uerr } = await supabase
           .from('licenses')
           .update({ last_check_at: now.toISOString() })
           .eq('id', data.id);
+
+        if (uerr) {
+          console.error('❌ licenses update error:', uerr.message);
+          return res.json({ ok: false, reason: 'server_error' });
+        }
 
         return res.json({
           ok: true,
           reason: 'paid_demo_ok_not_bound',
           bound_account: null,
-          expires_at: expiresAt,
+          bound_broker: null,
+          expires_at: expiresAt ? expiresAt.toISOString() : null,
         });
       }
 
-      // リアル → 初回バインド
-      await supabase
+      // リアル → 初回バインド（口座 + broker）
+      const { error: uerr } = await supabase
         .from('licenses')
         .update({
-  bound_account: account,
-  bound_server: serverNorm, // 正規化した値を保存
-  bound_broker: serverRaw.split('-')[0].trim(),
-
+          bound_account: account,
+          bound_server: serverNorm,   // ログ用に保存（比較は broker 基本）
+          bound_broker: broker,
           bound_at: now.toISOString(),
           last_check_at: now.toISOString(),
           last_active_at: now.toISOString(),
         })
         .eq('id', data.id);
 
+      if (uerr) {
+        console.error('❌ licenses bind update error:', uerr.message);
+        return res.json({ ok: false, reason: 'server_error' });
+      }
+
       return res.json({
         ok: true,
         reason: 'active_bound',
         bound_account: account,
-        bound_server: server,
-        expires_at: expiresAt,
+        bound_broker: broker,
+        expires_at: expiresAt ? expiresAt.toISOString() : null,
       });
     }
 
@@ -593,7 +628,6 @@ if (
     return res.json({ ok: false, reason: 'server_error' });
   }
 });
-
 
 // ===================================================
 // 管理用：ダウンロード再送API
