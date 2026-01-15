@@ -458,32 +458,105 @@ app.post('/license/validate', async (req, res) => {
     }
 
     // =============================
-    // paid：デモでもOK（バインドしない）
-    // =============================
-    if (data.plan_type === 'paid') {
-      // まだバインドしていない＆デモ → 動作確認OK、ただしバインドしない
-      if (!data.bound_account && isDemo) {
-        await supabase
-          .from('licenses')
-          .update({ last_check_at: now.toISOString() })
-          .eq('id', data.id);
+// paid：デモでもOK（バインド制御あり）
+// =============================
+if (data.plan_type === 'paid') {
 
+  const serverLower = String(server).toLowerCase();
+  const isDemo = serverLower.includes('demo');
+
+  // =============================
+  // ① すでにバインド済み
+  // =============================
+  if (data.bound_account) {
+
+    // ★ 旧データ救済（bound_server が NULL）
+    if (!data.bound_server) {
+      if (Number(data.bound_account) !== account) {
         return res.json({
-          ok: true,
-          reason: 'paid_demo_ok_not_bound',
-          bound_account: null,
-          expires_at: expiresAt,
+          ok: false,
+          reason: 'account_mismatch_legacy',
+          bound_account: data.bound_account,
         });
       }
 
-      // まだバインドしていない＆リアル → ここで初回バインド
-   if (!data.bound_account && !isDemo) {
+      // 後付けで server / broker を保存
+      await supabase
+        .from('licenses')
+        .update({
+          bound_server: server,
+          bound_broker: server.split('-')[0],
+          last_check_at: now.toISOString(),
+          last_active_at: now.toISOString(),
+        })
+        .eq('id', data.id);
+
+      return res.json({
+        ok: true,
+        reason: 'legacy_bound_updated',
+        bound_account: data.bound_account,
+        bound_server: server,
+        expires_at: expiresAt,
+      });
+    }
+
+    // ★ 新方式：口座＋サーバー完全一致
+    if (
+      Number(data.bound_account) !== account ||
+      data.bound_server !== server
+    ) {
+      return res.json({
+        ok: false,
+        reason: 'account_or_server_mismatch',
+        bound_account: data.bound_account,
+        bound_server: data.bound_server,
+      });
+    }
+
+    // 一致 → OK
+    await supabase
+      .from('licenses')
+      .update({
+        last_check_at: now.toISOString(),
+        last_active_at: now.toISOString(),
+      })
+      .eq('id', data.id);
+
+    return res.json({
+      ok: true,
+      reason: 'active',
+      bound_account: data.bound_account,
+      bound_server: data.bound_server,
+      expires_at: expiresAt,
+    });
+  }
+
+  // =============================
+  // ② まだバインドしていない
+  // =============================
+
+  // デモ → OK（バインドしない）
+  if (isDemo) {
+    await supabase
+      .from('licenses')
+      .update({ last_check_at: now.toISOString() })
+      .eq('id', data.id);
+
+    return res.json({
+      ok: true,
+      reason: 'paid_demo_ok_not_bound',
+      bound_account: null,
+      expires_at: expiresAt,
+    });
+  }
+
+  // リアル → 初回バインド
   await supabase
     .from('licenses')
     .update({
       bound_account: account,
       bound_server: server,
-      bound_broker: server.split('-')[0], // 雑でOK
+      bound_broker: server.split('-')[0],
       bound_at: now.toISOString(),
       last_check_at: now.toISOString(),
       last_active_at: now.toISOString(),
@@ -495,47 +568,9 @@ app.post('/license/validate', async (req, res) => {
     reason: 'active_bound',
     bound_account: account,
     bound_server: server,
+    expires_at: expiresAt,
   });
 }
-
-
-      // すでにバインド済み → 口座一致ならOK（デモ/リアルどちらでも）
-     if (
-  Number(data.bound_account) !== account ||
-  data.bound_server !== server
-) {
-  return res.json({
-    ok: false,
-    reason: 'account_or_server_mismatch',
-    bound_account: data.bound_account,
-    bound_server: data.bound_server,
-  });
-}
-
-
-      await supabase
-        .from('licenses')
-        .update({
-          last_check_at: now.toISOString(),
-          last_active_at: now.toISOString(),
-        })
-        .eq('id', data.id);
-
-      return res.json({
-        ok: true,
-        reason: 'active',
-        bound_account: data.bound_account,
-        expires_at: expiresAt,
-      });
-    }
-
-    // plan_type不明
-    return res.json({ ok: false, reason: 'plan_type_invalid' });
-  } catch (err) {
-    console.error('❌ Unexpected Server Error:', err);
-    return res.json({ ok: false, reason: 'server_error' });
-  }
-});
 
 // ===================================================
 // 管理用：ダウンロード再送API
