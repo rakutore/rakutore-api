@@ -508,10 +508,14 @@ const serverNorm = serverRaw ? serverRaw.toLowerCase() : null;
         }
 
         // ★ 新方式：口座＋サーバー完全一致
-        if (
-          Number(data.bound_account) !== account ||
-          data.bound_server !== server
-        ) {
+       const boundServerNorm =
+  (data.bound_server ?? '').toString().trim().toLowerCase();
+
+if (
+  Number(data.bound_account) !== account ||
+  boundServerNorm !== (serverNorm ?? '')
+) {
+
           return res.json({
             ok: false,
             reason: 'account_or_server_mismatch',
