@@ -292,3 +292,134 @@ Apps Script → Zoho通知
 トリガー変更・オーナー変更直後は 1回目が不安定なことがある
 
 2回目以降に正常なら問題なし
+
+デモ追加オプションの件了解。README にそのまま貼れる形で、「将来拡張（allow_demo）」も含めた 運用仕様＋DB＋APIの要点 をまとめて置けるテンプレを書いたよ。
+（あなたの今の方針：基本リアル専用／デモは確認用 or 追加オプション、に沿ってる）
+
+# Rakutore Anchor – License System (Supabase)
+
+このREADMEは `licenses` テーブルと `/license/validate` の仕様、および運用ルールをまとめたものです。
+
+---
+
+## 1. 目的
+
+- 不正利用（コピー・配布）を防ぐ
+- サブスク/売り切りどちらでも運用できる構造にする
+- デモは原則「動作確認用」に留め、リアル稼働は口座バインドで保護する
+
+---
+
+## 2. 基本仕様（最終形）
+
+### 入力（EA → API）
+- `email` : 購入時メール
+- `account`: MT4口座番号
+- `server` : 取引サーバー名（例: `AxioryAsia-02Live`, `AxioryAsia-02Demo`）
+
+### 判定ルール
+
+#### trial（体験）
+- **デモのみ利用可**
+- バインドしない（`bound_*` は保持しない）
+- リアルで起動したら `trial_demo_only` で拒否
+
+#### paid（本契約）
+- **リアルで初回起動したときだけバインド**
+  - `bound_account` / `bound_server` / `bound_broker` を保存
+- 以後は **同一口座＋同一サーバー** のみ許可
+- デモは「未バインドならOK（動作確認）」  
+  バインド後は原則デモに戻れない（セキュリティ重視）
+
+---
+
+## 3. licenses テーブル（主な列）
+
+- `email` (text)
+- `status` (license_status) : `inactive | active | canceled` など
+- `plan_type` (text) : `trial | paid`
+- `expires_at` (timestamptz) : 有効期限（サブスク用。売り切りはNULLでも可）
+- `bound_account` (int8) : リアル初回起動でバインド
+- `bound_server` (text) : リアル初回起動でバインド
+- `bound_broker` (text) : `server.split('-')[0]` 等で保存
+- `bound_at` (timestamptz)
+- `last_check_at` (timestamptz)
+- `last_active_at` (timestamptz)
+
+### 注意（重要）
+- `bound_server` / `bound_broker` に **空文字（EMPTY）** が入るとミスマッチ地雷になる  
+  → 未バインドは `NULL` を正とする
+
+---
+
+## 4. 推奨SQL（初期セット）
+
+### 4.1 status デフォルト（安全側）
+```sql
+alter table licenses
+alter column status set default 'inactive';
+
+4.2 plan_type を必須化（事故防止）
+alter table licenses
+alter column plan_type set not null;
+
+4.3 status を必須化（任意だが推奨）
+alter table licenses
+alter column status set not null;
+
+4.4 EMPTY（空文字）をNULLへ補正（事故修復）
+update licenses
+set bound_server = null
+where bound_server = '';
+
+update licenses
+set bound_broker = null
+where bound_broker = '';
+
+5. 将来拡張（オプション）: allow_demo スイッチ
+
+要望が増えたら「デモ利用を有料オプション化」するためのスイッチ。
+
+5.1 列追加
+alter table licenses
+add column allow_demo boolean default false;
+
+5.2 使い方（運用）
+
+通常：allow_demo=false（リアル専用）
+
+追加料金/特別対応：allow_demo=true（デモ利用許可）
+
+PAYJP webhook 等で課金確認後に allow_demo=true にする運用が可能。
+
+6. 運用フロー（想定）
+
+決済完了
+
+licenses レコード作成（inactive）
+
+email, plan_type を保存
+
+課金確認（PAYJP webhook 等）
+
+status=active に更新
+
+EA 初回起動
+
+デモ（trial/paid未バインド）: 動作確認OK
+
+リアル（paid未バインド）: 初回バインドして稼働開始
+
+継続/解約
+
+解約時は status=canceled（または inactive）に変更
+
+必要なら「最後の挨拶メール」を自動送信
+
+7. 重要ポリシー（サポート）
+
+口座変更（バインド解除）は原則 運営側で対応
+（例：月1回まで、セキュリティのため）
+
+デモ利用は原則「初回動作確認用」
+要望が多ければ allow_demo を有料オプションとして開放
