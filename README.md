@@ -423,3 +423,24 @@ EA 初回起動
 
 デモ利用は原則「初回動作確認用」
 要望が多ければ allow_demo を有料オプションとして開放
+
+## 管理用ダウンロード発行
+
+- 初回DL：
+  /admin/confirm-payment
+  管理画面からURLを発行し、手動でメール送信
+
+- 再送：
+  /admin/resend-download
+  SendGridで自動送信
+
+※ DLトークンは1回のみ有効
+※ EA起動には購入メール＋WebRequest必須
+
+
+① 管理画面にコピーボタン（UX）
+navigator.clipboard.writeText(downloadUrl);
+
+② トークン発行ログをDBに残す
+
+（誰にいつ出したか追える）　　※のとこの会話チャット「返信メール」のとこの会話
