@@ -553,6 +553,33 @@ app.post('/license/validate', async (req, res) => {
     return res.json({ ok: false, reason: 'server_error' });
   }
 });
+// ===================================================
+// 管理用：入金確認 → 初回DL発行API（追加）
+// ===================================================
+app.post('/admin/confirm-payment', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ ok: false, reason: 'email_required' });
+    }
+
+    const token = await issueDownloadToken(email);
+    if (!token) {
+      return res.status(500).json({ ok: false, reason: 'token_failed' });
+    }
+
+    const downloadUrl = `https://api.rakutore.jp/download?token=${token}`;
+
+    console.log('💰 初回DL発行:', email, downloadUrl);
+
+    // 管理画面にURLを返す（メールは送らない）
+    return res.json({ ok: true, downloadUrl });
+
+  } catch (err) {
+    console.error('❌ confirm-payment error:', err);
+    return res.status(500).json({ ok: false, reason: 'server_error' });
+  }
+});
 
 // ===================================================
 // 管理用：ダウンロード再送API
