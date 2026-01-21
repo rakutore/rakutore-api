@@ -619,6 +619,96 @@ Rakutore Anchor 運営`
     res.status(500).json({ error: 'server_error' });
   }
 });
+// ===================================================
+// Cron用：デモ終了3日前メール送信（1日1回実行）
+// ===================================================
+app.post('/admin/cron/demo-ending-reminder', async (req, res) => {
+  try {
+    // ---- 簡易ガード（Cron専用）----
+    const key = req.headers['x-cron-key'];
+    if (process.env.CRON_KEY && key !== process.env.CRON_KEY) {
+      return res.status(401).json({ ok: false, reason: 'unauthorized' });
+    }
+
+    // ---- JST基準で「今日 + 3日」----
+    const now = new Date();
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const target = new Date(jstNow.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+    const yyyy = target.getUTCFullYear();
+    const mm = String(target.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(target.getUTCDate()).padStart(2, '0');
+    const targetDate = `${yyyy}-${mm}-${dd}`;
+
+    const start = `${targetDate}T00:00:00.000Z`;
+    const end   = `${targetDate}T23:59:59.999Z`;
+
+    // ---- 対象デモ取得 ----
+    const { data: rows, error } = await supabase
+      .from('licenses')
+      .select('id,email,expires_at,plan_type,status')
+      .eq('plan_type', 'trial')
+      .eq('status', 'active')
+      .gte('expires_at', start)
+      .lte('expires_at', end);
+
+    if (error) {
+      console.error('❌ demo reminder query error:', error.message);
+      return res.status(500).json({ ok: false, reason: 'query_failed' });
+    }
+
+    let sent = 0;
+
+    for (const lic of rows || []) {
+      const endDate = lic.expires_at
+        ? String(lic.expires_at).slice(0, 10)
+        : targetDate;
+
+      await sendEmail(
+        lic.email,
+        `【Rakutore Anchor】デモ終了予定のお知らせ（${endDate}）`,
+`Rakutore Anchor をお試しいただき、ありがとうございます。
+
+現在ご利用中のデモ（14日間）は、
+${endDate} をもって終了予定となっております。
+
+■ デモ終了後について
+・自動で課金されることはありません
+・EAが突然動かなくなることもありません
+・ご判断はご自身のタイミングで大丈夫です
+
+■ 継続をご希望の場合
+通常版（実運用）への切り替えをご希望の場合は、
+本メールにそのままご返信ください。
+ご案内をお送りします。
+
+※ 本メールはご案内のみです。
+※ 無理な勧誘・自動請求は一切行っておりません。
+
+――――――――――
+※このメールは、ご登録のメールアドレス（${lic.email}）宛にお送りしています。
+――――――――――
+
+Rakutore Anchor サポート
+support@rakutore.jp
+https://rakutore.jp`
+      );
+
+      sent++;
+    }
+
+    return res.json({
+      ok: true,
+      targetDate,
+      matched: rows.length,
+      sent,
+    });
+
+  } catch (err) {
+    console.error('❌ demo-ending-reminder error:', err);
+    return res.status(500).json({ ok: false, reason: 'server_error' });
+  }
+});
 
 // ===================================================
 // 動作チェック
