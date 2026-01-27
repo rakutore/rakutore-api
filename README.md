@@ -465,3 +465,17 @@ express-rate-limit みたいなライブラリを使って
 同じIPから 1分間に何十回も叩かれたら少し止める
 
 → 将来ユーザーが増えた時の“荒らし”に強くなる。
+
+
+SQLに入れる
+B. いま配るZIPを変えたいとき（v6に切替）
+update app_settings
+set value = 'Rakutore_Anchor_v6.zip', updated_at = now()
+where key = 'ea_zip_path';
+
+3) すぐ確認できるチェック
+
+SQL Editorでこれ打つと「今どのZIPを配布設定にしてるか」見れます：
+
+select * from app_settings where key='ea_zip_path';
+
