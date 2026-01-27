@@ -479,3 +479,24 @@ SQL Editorでこれ打つと「今どのZIPを配布設定にしてるか」見�
 
 select * from app_settings where key='ea_zip_path';
 
+/**
+ * Rakutore Anchor API (Express)
+ * ---------------------------------------------------
+ * ✅ 反映済み（あなたが決めた方針）
+ * - trial：EAを「初めて起動して認証が通った瞬間」から14日開始（自動でexpires_at確定）
+ * - paid ：月額（expires_at）＋猶予3日（grace_until）で停止判定
+ * - DL   ：download_tokenは1回のみ＋30日で期限切れ（download_tokens.expires_atで判定）
+ * - デモ終了3日前メール：licenses.expires_at基準で送信（二重送信防止：renewal_notice_3d_sent_at）
+ *
+ * ✅ 事前にDBに追加しておく列（最低限）
+ * --- licenses ---
+ *  - first_seen_at timestamptz
+ *  - grace_until timestamptz
+ *  - renewal_notice_3d_sent_at timestamptz
+ *  - downloaded_at timestamptz   (任意：DL実績。入れておくと便利)
+ * --- download_tokens ---
+ *  - expires_at timestamptz
+ *
+ * ※ Supabase Storage bucket: ea-secure / file: Rakutore_Anchor_v4.zip
+ */
+
