@@ -442,6 +442,11 @@ const now = new Date();
 // ※毎月更新ならNULLを許さない運用にすると安全
 const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
 
+    if (data.plan_type === 'paid' && !data.expires_at) {
+  return res.json({ ok: false, reason: 'expires_at_required' });
+}
+
+
 // 1) expires_at が入っていて期限切れなら最優先で止める
 if (expiresAt && now >= expiresAt) {
   return res.json({ ok: false, reason: "expired" });
