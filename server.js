@@ -433,25 +433,32 @@ app.post('/license/validate', async (req, res) => {
       return res.json({ ok: false, reason: 'not_found' });
     }
 
-    // =============================
-    // 基本チェック
-    // =============================
-    const now = new Date();
-    const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
+  // =============================
+// 基本チェック
+// =============================
+const now = new Date();
 
-    if (data.status !== 'active') {
-      return res.json({ ok: false, reason: data.status });
-    }
+// expires_at が NULL なら無期限（＝止まらない）
+// ※毎月更新ならNULLを許さない運用にすると安全
+const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
 
-    if (expiresAt && expiresAt < now) {
-      return res.json({ ok: false, reason: 'expired' });
-    }
+// 1) expires_at が入っていて期限切れなら最優先で止める
+if (expiresAt && now >= expiresAt) {
+  return res.json({ ok: false, reason: "expired" });
+}
 
-    if (!data.plan_type) {
-      return res.json({ ok: false, reason: 'plan_type_invalid' });
-    }
+// 2) status が active 以外なら止める（手動停止など）
+if (data.status !== "active") {
+  return res.json({ ok: false, reason: data.status });
+}
 
-    const isDemo = server.toLowerCase().includes('demo');
+// 3) plan_type が無いのはデータ異常
+if (!data.plan_type) {
+  return res.json({ ok: false, reason: "plan_type_invalid" });
+}
+
+const isDemo = String(data.plan_type).toLowerCase().includes("demo");
+// ※ server 名から demo 判定するより plan_type で判定の方が安全
 
     // =============================
     // trial：デモのみ
