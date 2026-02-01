@@ -441,6 +441,11 @@ const now = new Date();
 // expires_at が NULL なら無期限（＝止まらない）
 // ※毎月更新ならNULLを許さない運用にすると安全
 const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
+    // 期限が無い = データ不備なので止める（入れ忘れ防止）
+if (!expiresAt) {
+  return res.json({ ok: false, reason: "expires_at_required" });
+}
+
 
     if (data.plan_type === 'paid' && !data.expires_at) {
   return res.json({ ok: false, reason: 'expires_at_required' });
@@ -464,7 +469,15 @@ if (!data.plan_type) {
 
 const isDemo = String(data.plan_type).toLowerCase().includes("demo");
 // ※ server 名から demo 判定するより plan_type で判定の方が安全
+// =============================
+// ★デモ判定（ここに置く）
+// =============================
+const isDemoServer =
+  server && server.toLowerCase().includes("demo");
 
+// ※ isDemoPlan は「paid_demo」のような将来用。今すぐ使わなくてもOK
+const isDemoPlan =
+  String(data.plan_type).toLowerCase().includes("demo");
     // =============================
     // trial：デモのみ
     // =============================
