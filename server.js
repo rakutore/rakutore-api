@@ -433,42 +433,32 @@ app.post('/license/validate', async (req, res) => {
       return res.json({ ok: false, reason: 'not_found' });
     }
 
-  // =============================
+ // =============================
 // 基本チェック
 // =============================
 const now = new Date();
-
-// expires_at が NULL なら無期限（＝止まらない）
-// ※毎月更新ならNULLを許さない運用にすると安全
 const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
-    // 期限が無い = データ不備なので止める（入れ忘れ防止）
+
+// 期限未設定は即NG（trial / paid 共通）
 if (!expiresAt) {
   return res.json({ ok: false, reason: "expires_at_required" });
 }
 
-
-    if (data.plan_type === 'paid' && !data.expires_at) {
-  return res.json({ ok: false, reason: 'expires_at_required' });
-}
-
-
-// 1) expires_at が入っていて期限切れなら最優先で止める
-if (expiresAt && now >= expiresAt) {
+// 期限切れ
+if (now >= expiresAt) {
   return res.json({ ok: false, reason: "expired" });
 }
 
-// 2) status が active 以外なら止める（手動停止など）
+// ステータス停止
 if (data.status !== "active") {
   return res.json({ ok: false, reason: data.status });
 }
 
-// 3) plan_type が無いのはデータ異常
+// プラン不正
 if (!data.plan_type) {
   return res.json({ ok: false, reason: "plan_type_invalid" });
 }
 
-const isDemo = String(data.plan_type).toLowerCase().includes("demo");
-// ※ server 名から demo 判定するより plan_type で判定の方が安全
 // =============================
 // ★デモ判定（ここに置く）
 // =============================
@@ -479,105 +469,96 @@ const isDemoServer =
 const isDemoPlan =
   String(data.plan_type).toLowerCase().includes("demo");
     // =============================
-    // trial：デモのみ
-    // =============================
-    if (data.plan_type === 'trial') {
-      if (!isDemo) {
-        return res.json({ ok: false, reason: 'trial_demo_only' });
-      }
+// trial：デモライセンス
+// =============================
+if (data.plan_type === "trial") {
 
-      await supabase
-        .from('licenses')
-        .update({ last_check_at: now.toISOString() })
-        .eq('id', data.id);
+  await supabase
+    .from("licenses")
+    .update({ last_check_at: now.toISOString() })
+    .eq("id", data.id);
 
+  return res.json({
+    ok: true,
+    reason: "trial_ok",
+    expires_at: expiresAt,
+  });
+}
+
+
+   // =============================
+// paid
+// =============================
+if (data.plan_type === "paid") {
+
+  // ① 既にバインド済み
+  if (data.bound_account) {
+
+    if (
+      Number(data.bound_account) !== account ||
+      (data.bound_server && data.bound_server !== server)
+    ) {
       return res.json({
-        ok: true,
-        reason: 'trial_demo_ok',
-        expires_at: expiresAt,
+        ok: false,
+        reason: "account_or_server_mismatch",
+        bound_account: data.bound_account,
+        bound_server: data.bound_server,
       });
     }
 
-    // =============================
-    // paid
-    // =============================
-    if (data.plan_type === 'paid') {
+    await supabase
+      .from("licenses")
+      .update({
+        last_check_at: now.toISOString(),
+        last_active_at: now.toISOString(),
+      })
+      .eq("id", data.id);
 
-      // ① 既にバインド済み
-      if (data.bound_account) {
-
-        if (
-          Number(data.bound_account) !== account ||
-          (data.bound_server && data.bound_server !== server)
-        ) {
-          return res.json({
-            ok: false,
-            reason: 'account_or_server_mismatch',
-            bound_account: data.bound_account,
-            bound_server: data.bound_server,
-          });
-        }
-
-        await supabase
-          .from('licenses')
-          .update({
-            last_check_at: now.toISOString(),
-            last_active_at: now.toISOString(),
-          })
-          .eq('id', data.id);
-
-        return res.json({
-          ok: true,
-          reason: 'active',
-          bound_account: data.bound_account,
-          bound_server: data.bound_server,
-          expires_at: expiresAt,
-        });
-      }
-
-      // ② 未バインド
-      if (isDemo) {
-        await supabase
-          .from('licenses')
-          .update({ last_check_at: now.toISOString() })
-          .eq('id', data.id);
-
-        return res.json({
-          ok: true,
-          reason: 'paid_demo_ok_not_bound',
-          expires_at: expiresAt,
-        });
-      }
-
-      // リアル初回バインド
-      await supabase
-        .from('licenses')
-        .update({
-          bound_account: account,
-          bound_server: server,
-          bound_broker: server.split('-')[0],
-          bound_at: now.toISOString(),
-          last_check_at: now.toISOString(),
-          last_active_at: now.toISOString(),
-        })
-        .eq('id', data.id);
-
-      return res.json({
-        ok: true,
-        reason: 'active_bound',
-        bound_account: account,
-        bound_server: server,
-        expires_at: expiresAt,
-      });
-    }
-
-    return res.json({ ok: false, reason: 'plan_type_invalid' });
-
-  } catch (err) {
-    console.error('❌ Unexpected Server Error:', err);
-    return res.json({ ok: false, reason: 'server_error' });
+    return res.json({
+      ok: true,
+      reason: "active",
+      bound_account: data.bound_account,
+      bound_server: data.bound_server,
+      expires_at: expiresAt,
+    });
   }
-});
+
+  // ② 未バインド（デモ口座ならバインドしない）
+  if (isDemoServer) {
+    await supabase
+      .from("licenses")
+      .update({ last_check_at: now.toISOString() })
+      .eq("id", data.id);
+
+    return res.json({
+      ok: true,
+      reason: "paid_demo_ok_not_bound",
+      expires_at: expiresAt,
+    });
+  }
+
+  // ③ リアル初回バインド
+  await supabase
+    .from("licenses")
+    .update({
+      bound_account: account,
+      bound_server: server,
+      bound_broker: server.split("-")[0],
+      bound_at: now.toISOString(),
+      last_check_at: now.toISOString(),
+      last_active_at: now.toISOString(),
+    })
+    .eq("id", data.id);
+
+  return res.json({
+    ok: true,
+    reason: "active_bound",
+    bound_account: account,
+    bound_server: server,
+    expires_at: expiresAt,
+  });
+}
+
 // ===================================================
 // 管理用：入金確認 → 初回DL発行API（追加）
 // ===================================================
