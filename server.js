@@ -3,7 +3,6 @@
 // ===================================================
 const express = require('express');
 const path = require('path');
-const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
 const sgMail = require('@sendgrid/mail');
 const crypto = require('crypto');
@@ -42,11 +41,8 @@ async function sendEmail(to, subject, text) {
 }
 
 // ===================================================
-// Stripe / Supabase
+// Supabase
 // ===================================================
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
