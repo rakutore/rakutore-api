@@ -222,14 +222,20 @@ app.post('/download', async (req, res) => {
 app.post('/license/validate', async (req, res) => {
   try {
     // =============================
-    // 入力取得
+    // 入力取得（正規化）
     // =============================
     const emailRaw   = req.body?.email;
     const accountRaw = req.body?.account;
     const serverRaw  = req.body?.server;
 
-    const email  = emailRaw ? String(emailRaw).replace(/\x00/g, '').trim() : null;
-    const server = serverRaw ? String(serverRaw).replace(/\x00/g, '').trim() : null;
+    const email = emailRaw
+      ? String(emailRaw).replace(/\x00/g, '').trim().toLowerCase()
+      : null;
+
+    const server = serverRaw
+      ? String(serverRaw).replace(/\x00/g, '').trim()
+      : null;
+
     const account = accountRaw
       ? Number(String(accountRaw).replace(/\x00/g, '').replace(/\D/g, ''))
       : null;
@@ -241,7 +247,7 @@ app.post('/license/validate', async (req, res) => {
     if (!server)  return res.json({ ok: false, reason: 'server_required' });
 
     // =============================
-    // DB取得（emailで取得）
+    // DB取得（email）
     // =============================
     const { data, error } = await supabase
       .from('licenses')
@@ -268,28 +274,30 @@ app.post('/license/validate', async (req, res) => {
     const now = new Date();
     const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
 
-    if (!expiresAt) {
-      return res.json({ ok: false, reason: 'expires_at_required' });
-    }
-    if (now >= expiresAt) {
-      return res.json({ ok: false, reason: 'expired' });
-    }
-    if (data.status !== 'active') {
-      return res.json({ ok: false, reason: data.status });
-    }
-    if (!data.plan_type) {
-      return res.json({ ok: false, reason: 'plan_type_invalid' });
-    }
+    if (!expiresAt) return res.json({ ok: false, reason: 'expires_at_required' });
+    if (now >= expiresAt) return res.json({ ok: false, reason: 'expired' });
+    if (data.status !== 'active') return res.json({ ok: false, reason: data.status });
+    if (!data.plan_type) return res.json({ ok: false, reason: 'plan_type_invalid' });
 
     // =============================
     // デモ判定
+    // - 将来EA側から env: "demo"/"live" を送れるようにもしておく（今送らなくてもOK）
     // =============================
-    const isDemoServer = server.toLowerCase().includes('demo');
+    const envRaw = req.body?.env;
+    const env = envRaw ? String(envRaw).toLowerCase().trim() : null;
+
+    const isDemoRequest = env
+      ? (env === 'demo')
+      : server.toLowerCase().includes('demo');
 
     // =============================
-    // trial
+    // trial：デモ限定・バインドしない
     // =============================
     if (data.plan_type === 'trial') {
+      if (!isDemoRequest) {
+        return res.json({ ok: false, reason: 'trial_demo_only' });
+      }
+
       await supabase
         .from('licenses')
         .update({ last_check_at: now.toISOString() })
@@ -303,42 +311,12 @@ app.post('/license/validate', async (req, res) => {
     }
 
     // =============================
-    // paid
+    // paid：デモOK（バインドしない）／リアル初回だけバインド／以後は口座固定
     // =============================
     if (data.plan_type === 'paid') {
-      // ① 既にバインド済み
-      if (data.bound_account) {
-        if (
-          Number(data.bound_account) !== account ||
-          (data.bound_server && data.bound_server !== server)
-        ) {
-          return res.json({
-            ok: false,
-            reason: 'account_or_server_mismatch',
-            bound_account: data.bound_account,
-            bound_server: data.bound_server,
-          });
-        }
 
-        await supabase
-          .from('licenses')
-          .update({
-            last_check_at: now.toISOString(),
-            last_active_at: now.toISOString(),
-          })
-          .eq('id', data.id);
-
-        return res.json({
-          ok: true,
-          reason: 'active',
-          bound_account: data.bound_account,
-          bound_server: data.bound_server,
-          expires_at: expiresAt,
-        });
-      }
-
-      // ② 未バインド：デモ口座ならバインドしない
-      if (isDemoServer) {
+      // デモは常にOK（バインドしない）
+      if (isDemoRequest) {
         await supabase
           .from('licenses')
           .update({ last_check_at: now.toISOString() })
@@ -351,7 +329,37 @@ app.post('/license/validate', async (req, res) => {
         });
       }
 
-      // ③ リアル初回バインド
+      // ① 既にバインド済み：口座が違えば申請が必要（無申請は動かない）
+      if (data.bound_account) {
+        if (Number(data.bound_account) !== account) {
+          return res.json({
+            ok: false,
+            reason: 'account_mismatch_need_request',
+            bound_account: data.bound_account,
+            request_url: process.env.ACCOUNT_CHANGE_FORM_URL || null, // GoogleフォームURLを環境変数に入れておくと便利
+          });
+        }
+
+        // serverは表記ゆれがあるので「条件」にしない（ログ用途に更新はOK）
+        await supabase
+          .from('licenses')
+          .update({
+            bound_server: server,
+            last_check_at: now.toISOString(),
+            last_active_at: now.toISOString(),
+          })
+          .eq('id', data.id);
+
+        return res.json({
+          ok: true,
+          reason: 'active',
+          bound_account: data.bound_account,
+          bound_server: server,
+          expires_at: expiresAt,
+        });
+      }
+
+      // ② 未バインド：リアル初回バインド（口座固定）
       await supabase
         .from('licenses')
         .update({
@@ -373,7 +381,6 @@ app.post('/license/validate', async (req, res) => {
       });
     }
 
-    // trial / paid 以外
     return res.json({ ok: false, reason: 'plan_type_invalid' });
 
   } catch (err) {
@@ -381,6 +388,7 @@ app.post('/license/validate', async (req, res) => {
     return res.status(500).json({ ok: false, reason: 'server_error' });
   }
 });
+
 
 // ===================================================
 // 管理用：入金確認 → 初回DL発行API（追加）
