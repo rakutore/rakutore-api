@@ -330,15 +330,15 @@ app.post('/license/validate', async (req, res) => {
       }
 
       // ① 既にバインド済み：口座が違えば申請が必要（無申請は動かない）
-      if (data.bound_account) {
-        if (Number(data.bound_account) !== account) {
-          return res.json({
-            ok: false,
-            reason: 'account_mismatch_need_request',
-            bound_account: data.bound_account,
-            request_url: process.env.ACCOUNT_CHANGE_FORM_URL || null, // GoogleフォームURLを環境変数に入れておくと便利
-          });
-        }
+     if (data.bound_account) {
+  if (Number(data.bound_account) !== account) {
+    return res.json({
+      ok: false,
+      reason: 'account_mismatch_need_request',
+      bound_account: data.bound_account,
+      request_url: 'https://forms.gle/UUML7Mkyfuck6tdBA',
+    });
+  }
 
         // serverは表記ゆれがあるので「条件」にしない（ログ用途に更新はOK）
         await supabase
