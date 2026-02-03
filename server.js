@@ -225,7 +225,13 @@ app.post('/license/validate', async (req, res) => {
     // =============================
     // 入力取得（正規化）
     // =============================
-    const emailRaw   = req.body?.email;
+   const emailRaw = req.body?.email;
+
+// ★ 念のため + を復元
+const email = emailRaw
+  ? String(emailRaw).replace(/ /g, '+').trim().toLowerCase()
+  : null;
+
     const accountRaw = req.body?.account;
     const serverRaw  = req.body?.server;
 
