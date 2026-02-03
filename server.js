@@ -231,20 +231,18 @@ const serverRaw  = req.body?.server;
 
 const email = emailRaw
   ? String(emailRaw)
-      .replace(/\x00/g, '') // NULL除去
-      .replace(/ /g, '+')   // ★ + 復元（最重要）
+      .replace(/\x00/g, '')
+      .replace(/ /g, '+')
       .trim()
       .toLowerCase()
   : null;
 
 const server = serverRaw
-  ? String(serverRaw).replace(/\x00/g, '').trim()
+  ? String(serverRaw)
+      .replace(/\x00/g, '')
+      .trim()
   : null;
 
-
-    const server = serverRaw
-      ? String(serverRaw).replace(/\x00/g, '').trim()
-      : null;
 
     const account = accountRaw
       ? Number(String(accountRaw).replace(/\x00/g, '').replace(/\D/g, ''))
