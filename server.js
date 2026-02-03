@@ -225,19 +225,22 @@ app.post('/license/validate', async (req, res) => {
     // =============================
     // 入力取得（正規化）
     // =============================
-   const emailRaw = req.body?.email;
+ const emailRaw   = req.body?.email;
+const accountRaw = req.body?.account;
+const serverRaw  = req.body?.server;
 
-// ★ 念のため + を復元
 const email = emailRaw
-  ? String(emailRaw).replace(/ /g, '+').trim().toLowerCase()
+  ? String(emailRaw)
+      .replace(/\x00/g, '') // NULL除去
+      .replace(/ /g, '+')   // ★ + 復元（最重要）
+      .trim()
+      .toLowerCase()
   : null;
 
-    const accountRaw = req.body?.account;
-    const serverRaw  = req.body?.server;
+const server = serverRaw
+  ? String(serverRaw).replace(/\x00/g, '').trim()
+  : null;
 
-    const email = emailRaw
-      ? String(emailRaw).replace(/\x00/g, '').trim().toLowerCase()
-      : null;
 
     const server = serverRaw
       ? String(serverRaw).replace(/\x00/g, '').trim()
