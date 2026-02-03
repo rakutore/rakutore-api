@@ -75,9 +75,10 @@ async function issueDownloadToken(email) {
 // ===================================================
 // Webhook 以外のパース
 // ===================================================
-app.use(express.urlencoded({ extended: false }));
-app.use(express.text({ type: 'text/*' }));
+// Webhookより「前」に置く
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
 
 // ===================================================
 // EAダウンロード確認画面（GET）
