@@ -15,7 +15,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ================================
 // 配布EA ZIPファイル設定
 // ================================
-const EA_ZIP_PATH = 'Rakutore_Anchor_v4.zip';
+const EA_ZIP_PATH = 'Rakutore_Anchor_v5.2.zip';
 
 // ===================================================
 // SendGrid
