@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const app = express();
 
 // 静的ファイル
+app.use('/admin.html', basicAuth)
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ================================
@@ -70,7 +71,22 @@ async function issueDownloadToken(email) {
     return null;
   }
 }
+// ================================
+// 管理画面ベーシック認証
+// ================================
+function basicAuth(req, res, next) {
+  const auth = { login: 'admin', password: 'rakutore123' }
 
+  const b64auth = (req.headers.authorization || '').split(' ')[1] || ''
+  const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':')
+
+  if (login && password && login === auth.login && password === auth.password) {
+    return next()
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="Admin Area"')
+  res.status(401).send('Authentication required.')
+}
 
 // ===================================================
 // Webhook 以外のパース
