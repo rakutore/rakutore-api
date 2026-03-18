@@ -62,12 +62,7 @@
       💰 入金確認 → 初回DL発行
     </button>
 
-    <!-- 再送（既存） -->
-    <button class="secondary" onclick="resend()">
-      🔁 ダウンロード再送
-    </button>
-
-    <div class="msg" id="msg"></div>
+      <div class="msg" id="msg"></div>
   </div>
 
   <script>
@@ -106,13 +101,6 @@
         msg.textContent = '❌ 通信エラー';
       }
     }
-
-    async function resend() {
-      const email = getEmail();
-      if (!email) {
-        msg.textContent = 'メールアドレスを入力してください';
-        return;
-      }
 
       msg.textContent = '再送中...';
 
