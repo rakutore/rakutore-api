@@ -65,65 +65,42 @@
       <div class="msg" id="msg"></div>
   </div>
 
-  <script>
-    const msg = document.getElementById('msg');
+<script>
+  const msg = document.getElementById('msg');
 
-    function getEmail() {
-      return document.getElementById('email').value.trim();
+  function getEmail() {
+    return document.getElementById('email').value.trim();
+  }
+
+  async function confirmPayment() {
+    const email = getEmail();
+    if (!email) {
+      msg.textContent = 'メールアドレスを入力してください';
+      return;
     }
 
-    async function confirmPayment() {
-      const email = getEmail();
-      if (!email) {
-        msg.textContent = 'メールアドレスを入力してください';
-        return;
+    msg.textContent = '初回DLを発行中...';
+
+    try {
+      const res = await fetch('/admin/confirm-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+
+      const json = await res.json();
+
+      if (json.ok) {
+        msg.innerHTML =
+          '✅ 初回DLを発行しました<br>' +
+          `<a href="${json.downloadUrl}" target="_blank">DLリンクを確認</a>`;
+      } else {
+        msg.textContent = '❌ エラー: ' + json.reason;
       }
-
-      msg.textContent = '初回DLを発行中...';
-
-      try {
-        const res = await fetch('/admin/confirm-payment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email })
-        });
-
-        const json = await res.json();
-
-        if (json.ok) {
-          msg.innerHTML =
-            '✅ 初回DLを発行しました<br>' +
-            `<a href="${json.downloadUrl}" target="_blank">DLリンクを確認</a>`;
-        } else {
-          msg.textContent = '❌ エラー: ' + json.reason;
-        }
-      } catch (e) {
-        msg.textContent = '❌ 通信エラー';
-      }
+    } catch (e) {
+      msg.textContent = '❌ 通信エラー';
     }
-
-      msg.textContent = '再送中...';
-
-      try {
-        const res = await fetch('/admin/resend-download', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email })
-        });
-
-        const json = await res.json();
-
-        if (json.ok) {
-          msg.innerHTML =
-            '✅ 再送しました<br>' +
-            `<a href="${json.downloadUrl}" target="_blank">DLリンクを確認</a>`;
-        } else {
-          msg.textContent = '❌ エラー: ' + json.reason;
-        }
-      } catch (e) {
-        msg.textContent = '❌ 通信エラー';
-      }
-    }
-  </script>
+  }
+</script>
 </body>
 </html>
