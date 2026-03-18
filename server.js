@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const app = express();
 
 // 静的ファイル
+app.use('/admin', basicAuth)
 app.use('/admin.html', basicAuth)
 app.use(express.static(path.join(__dirname, 'public')));
 
